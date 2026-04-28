@@ -50,6 +50,42 @@ The skill also includes a reference API contract and a helper script:
 - [skills/deploy-to-vibestack/references/manifest.md](skills/deploy-to-vibestack/references/manifest.md)
 - [skills/deploy-to-vibestack/scripts/vibestack_deploy.py](skills/deploy-to-vibestack/scripts/vibestack_deploy.py)
 
+## App Creator Onboarding
+
+App creators should not need to clone this repository, read deployment docs, or learn Docker. Give them the VibeStack hostname, their team slug, and instructions for creating a personal API token in VibeStack. Then they can paste this prompt into Claude Code from inside their app project:
+
+```text
+I want you to set up VibeStack deployment for this app in Claude Code.
+
+First, ask me for:
+- My VibeStack hostname, for example https://vibestack.example.com
+- My VibeStack team name or team slug
+- The app name I want to use in VibeStack
+- Whether this app should require VibeStack login, an external password, or both
+- Whether this app needs a Postgres database
+- My VibeStack API token
+
+Do not print my API token back to me. Do not commit it. Do not store it in the app repository.
+
+Then install the VibeStack deployment skill for Claude Code:
+1. Fetch https://github.com/dankritz/vibestack
+2. Copy the repository folder `skills/deploy-to-vibestack` into the local Claude Code skills directory as `deploy-to-vibestack`.
+3. If you are not sure where Claude Code skills are installed on this machine, inspect the local Claude Code configuration and ask me before writing files.
+4. Verify that the installed skill contains `SKILL.md`, `scripts/vibestack_deploy.py`, `references/api.md`, and `references/manifest.md`.
+
+After the skill is installed, prepare this app for VibeStack:
+1. Inspect the project.
+2. Create or fix `Dockerfile` and `vibestack.json` if needed.
+3. Make sure the app listens on `0.0.0.0` and the port in `vibestack.json`.
+4. Run the VibeStack deploy helper in dry-run mode first.
+5. If dry-run succeeds, deploy the app to my VibeStack server using the API token I provided.
+6. Poll the deployment until it succeeds or fails.
+7. If deployment succeeds, show me the live URL.
+8. If deployment fails, explain the problem in plain language, fix the app if you can, and retry once.
+```
+
+Administrators should give creators a team slug rather than a database ID when possible. The default bootstrap team is usually `platform-admins`, but production teams should be created per group or department.
+
 ## Debian/Ubuntu Server Install
 
 VibeStack includes a Debian/Ubuntu installer that configures Docker, Docker Compose, Traefik, Let's Encrypt, the management host, the app base domain, and the initial platform admin.
