@@ -1,6 +1,6 @@
 {
   "name": "vibestack",
-  "version": "0.1.0",
+  "version": "0.2.0-alpha.0",
   "description": "Self-hosted platform for deploying AI-generated web applications.",
   "private": true,
   "author": "Dan Kritzinger",
@@ -28,5 +28,6 @@
     "prettier": "^3.2.5",
     "typescript": "^5.4.5",
     "vitest": "^1.6.0"
-  }
+  },
+  "vibestackRelease": "0.2a"
 }

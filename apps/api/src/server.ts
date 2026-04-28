@@ -113,7 +113,7 @@ async function ensureDeploymentsAllowed(db: Db, actor: Actor, teamId: string): P
   }
 }
 
-function appResponse(row: AppRow): Record<string, unknown> {
+function appResponse(row: AppRow & { external_password_hash?: string | null }): Record<string, unknown> {
   return {
     id: row.id,
     teamId: row.team_id,
@@ -127,7 +127,7 @@ function appResponse(row: AppRow): Record<string, unknown> {
     currentDeploymentId: row.current_deployment_id,
     postgresEnabled: row.postgres_enabled,
     externalPasswordEnabled: row.external_password_enabled,
-    externalPasswordConfigured: row.external_password_enabled,
+    externalPasswordConfigured: Boolean(row.external_password_hash),
     loginAccessEnabled: row.login_access_enabled,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -307,7 +307,8 @@ const DeployAppMetadata = z.object({
   secrets: z.record(z.string()).default({})
 });
 const SecretBody = z.object({ value: z.string().min(1) });
-const ExternalPasswordBody = z.object({ password: z.string().min(1), host: z.string().optional() });
+const ExternalPasswordBody = z.object({ password: z.string().min(1), host: z.string().optional(), next: z.string().optional() });
+const GatewayPasswordQuery = z.object({ next: z.string().optional(), error: z.string().optional() });
 const SettingsPatchBody = z.record(z.unknown());
 const IdParam = z.object({ id: z.string().uuid() });
 const TeamMemberParam = z.object({ teamId: z.string().uuid(), userId: z.string().uuid() });
@@ -331,6 +332,13 @@ function forwardedHost(request: FastifyRequest): string {
   return hostname;
 }
 
+function forwardedUrl(request: FastifyRequest): string {
+  const proto = firstHeaderValue(request.headers['x-forwarded-proto']) ?? 'https';
+  const host = forwardedHost(request);
+  const uri = firstHeaderValue(request.headers['x-forwarded-uri']) ?? '/';
+  return `${proto}://${host}${uri.startsWith('/') ? uri : `/${uri}`}`;
+}
+
 function firstHeaderValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
@@ -348,6 +356,72 @@ function clientIp(request: FastifyRequest): string {
   const forwardedFor = firstHeaderValue(request.headers['x-forwarded-for']);
   const firstForwardedIp = forwardedFor?.split(',')[0]?.trim();
   return firstForwardedIp || request.ip;
+}
+
+function htmlEscape(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function appPasswordNextUrl(appRow: AppRow, next?: string): string {
+  if (!next) return `https://${appRow.hostname}/`;
+
+  try {
+    const url = new URL(next);
+    if (url.hostname === appRow.hostname && ['http:', 'https:'].includes(url.protocol)) {
+      return url.toString();
+    }
+  } catch {
+    // Fall through to the app root for invalid or relative values.
+  }
+
+  return `https://${appRow.hostname}/`;
+}
+
+function appPasswordPage(config: Config, appRow: AppRow, next: string, error?: string): string {
+  const action = `${config.publicUrl.replace(/\/$/, '')}/api/v1/gateway/apps/${appRow.id}/password`;
+  const title = `Access ${appRow.name}`;
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${htmlEscape(title)}</title>
+    <style>
+      :root { color: #17202a; background: #edf1f5; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      * { box-sizing: border-box; }
+      body { align-items: center; display: flex; justify-content: center; margin: 0; min-height: 100vh; padding: 24px; }
+      main { background: white; border: 1px solid #d7dee8; border-radius: 8px; box-shadow: 0 16px 40px rgb(28 39 49 / 10%); display: grid; gap: 18px; max-width: 420px; padding: 28px; width: 100%; }
+      h1 { font-size: 1.6rem; line-height: 1.1; margin: 0; }
+      p { color: #657182; margin: 0; }
+      form { display: grid; gap: 14px; }
+      label { display: grid; gap: 7px; font-weight: 700; }
+      input { border: 1px solid #b9c4d1; border-radius: 7px; font: inherit; min-height: 44px; padding: 0 12px; }
+      button { align-items: center; background: #0f7b6c; border: 0; border-radius: 7px; color: white; cursor: pointer; display: inline-flex; font: inherit; font-weight: 800; justify-content: center; min-height: 44px; padding: 0 16px; }
+      .error { background: #fff0f0; border: 1px solid #ffc1bd; border-radius: 7px; color: #9f2720; padding: 10px 12px; }
+      code { background: #eef3f6; border: 1px solid #d7dee8; border-radius: 5px; color: #2e4e62; padding: 2px 6px; word-break: break-all; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>
+        <p>VibeStack protected app</p>
+        <h1>${htmlEscape(title)}</h1>
+      </div>
+      <p><code>${htmlEscape(appRow.hostname)}</code></p>
+      ${error ? `<div class="error">${htmlEscape(error)}</div>` : ''}
+      <form method="post" action="${htmlEscape(action)}">
+        <input type="hidden" name="next" value="${htmlEscape(next)}" />
+        <label>App password<input name="password" type="password" autocomplete="current-password" autofocus required /></label>
+        <button type="submit">Continue</button>
+      </form>
+    </main>
+  </body>
+</html>`;
 }
 
 async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
@@ -466,7 +540,28 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       sourceIp: clientIp(request),
       metadata: { host }
     });
+    if (appRow.external_password_enabled && appRow.external_password_hash) {
+      const next = encodeURIComponent(forwardedUrl(request));
+      return reply.redirect(`${config.publicUrl.replace(/\/$/, '')}/api/v1/gateway/apps/${appRow.id}/password?next=${next}`);
+    }
+
     return reply.code(401).send('Authentication required');
+  });
+
+  app.get('/api/v1/gateway/apps/:id/password', async (request, reply) => {
+    const { id } = parseParams(IdParam, request);
+    const query = parseQuery(GatewayPasswordQuery, request);
+    const appRow = await db.maybeOne<AppRow & { external_password_hash: string | null }>(
+      'SELECT * FROM apps WHERE id = $1 AND deleted_at IS NULL',
+      [id]
+    );
+    if (!appRow?.external_password_enabled || !appRow.external_password_hash) {
+      throw notFound('External password access is not enabled for this app.');
+    }
+
+    const next = appPasswordNextUrl(appRow, query.next);
+    const error = query.error === 'invalid' ? 'Invalid app password.' : undefined;
+    return reply.type('text/html; charset=utf-8').send(appPasswordPage(config, appRow, next, error));
   });
 
   app.post('/api/v1/gateway/apps/:id/password', async (request, reply) => {
@@ -487,7 +582,14 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       targetId: appRow.id,
       sourceIp: clientIp(request)
     });
+    const next = appPasswordNextUrl(appRow, body.next);
     if (!ok) {
+      const acceptsHtml = String(request.headers.accept ?? '').includes('text/html');
+      if (acceptsHtml || body.next) {
+        return reply.redirect(
+          `${config.publicUrl.replace(/\/$/, '')}/api/v1/gateway/apps/${appRow.id}/password?next=${encodeURIComponent(next)}&error=invalid`
+        );
+      }
       throw new HttpError({ code: 'INVALID_APP_PASSWORD', message: 'Invalid app password.', statusCode: 401 });
     }
     reply.setCookie(appPasswordCookieName(appRow.id), appPasswordCookieValue(appRow.id, appRow.external_password_hash), {
@@ -499,6 +601,9 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       path: '/',
       maxAge: 30 * 24 * 60 * 60
     });
+    if (body.next) {
+      return reply.redirect(next, 303);
+    }
     return { ok: true };
   });
 
@@ -941,6 +1046,10 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       'SELECT * FROM apps WHERE team_id = $1 AND slug = $2 AND deleted_at IS NULL',
       [teamId, appSlug]
     );
+    const externalPasswordHash =
+      metadata.access.externalPasswordEnabled && metadata.access.externalPassword
+        ? await hashPassword(metadata.access.externalPassword)
+        : null;
 
     const appRow =
       existing ??
@@ -959,9 +1068,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
           actor.user.id,
           metadata.postgres.enabled,
           metadata.access.externalPasswordEnabled,
-          metadata.access.externalPasswordEnabled && metadata.access.externalPassword
-            ? await hashPassword(metadata.access.externalPassword)
-            : null,
+          externalPasswordHash,
           metadata.access.loginRequired
         ]
       ));
@@ -993,9 +1100,22 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
 
     await db.query(
       `UPDATE apps
-       SET status = 'deploying', postgres_enabled = $2, updated_at = now(), last_updated_by_user_id = $3
+       SET status = 'deploying',
+           postgres_enabled = $2,
+           updated_at = now(),
+           last_updated_by_user_id = $3,
+           login_access_enabled = $4,
+           external_password_enabled = $5,
+           external_password_hash = COALESCE($6, external_password_hash)
        WHERE id = $1`,
-      [appRow.id, metadata.postgres.enabled, actor.user.id]
+      [
+        appRow.id,
+        metadata.postgres.enabled,
+        actor.user.id,
+        metadata.access.loginRequired,
+        metadata.access.externalPasswordEnabled,
+        externalPasswordHash
+      ]
     );
     await addAppEvent(db, {
       appId: appRow.id,
@@ -1260,6 +1380,9 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
 
 export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: true, trustProxy: true });
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_request, body, done) => {
+    done(null, Object.fromEntries(new URLSearchParams(String(body))));
+  });
   await app.register(cookie, { secret: ctx.config.sessionSecret });
   await app.register(cors, { origin: true, credentials: true });
   await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024, files: 1 } });

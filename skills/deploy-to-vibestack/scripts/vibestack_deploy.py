@@ -12,7 +12,9 @@ import json
 import mimetypes
 import os
 import re
+import secrets as secret_random
 import ssl
+import string
 import sys
 import tarfile
 import tempfile
@@ -49,6 +51,7 @@ CREDENTIAL_PATHS = [
     Path("~/.config/vibestack/credentials.json").expanduser(),
     Path("~/.vibestack/credentials.json").expanduser(),
 ]
+EXTERNAL_PASSWORD_ALPHABET = string.ascii_letters + string.digits + "-_"
 
 
 def parse_bool(value: str) -> bool:
@@ -58,6 +61,10 @@ def parse_bool(value: str) -> bool:
     if lowered in {"0", "false", "no", "n"}:
         return False
     raise argparse.ArgumentTypeError(f"expected boolean, got {value!r}")
+
+
+def generate_external_password(length: int = 24) -> str:
+    return "".join(secret_random.choice(EXTERNAL_PASSWORD_ALPHABET) for _ in range(length))
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -295,6 +302,7 @@ def deploy(args: argparse.Namespace) -> None:
     args.login_access = True if args.login_access is None else args.login_access
     args.external_password = False if args.external_password is None else args.external_password
     args.postgres = False if args.postgres is None else args.postgres
+    generated_external_password: str | None = None
 
     source = Path(args.source).resolve()
     if not source.exists() or not source.is_dir():
@@ -314,6 +322,10 @@ def deploy(args: argparse.Namespace) -> None:
     args.endpoint = require_deploy_value(args.endpoint, "VibeStack API URL", "--api-url")
     args.team = require_deploy_value(args.team, "VibeStack team", "--team")
     args.token = require_deploy_value(args.token, "VibeStack API token", "--token")
+
+    if args.external_password and not args.external_password_value:
+        args.external_password_value = generate_external_password()
+        generated_external_password = args.external_password_value
 
     secrets: dict[str, str] = {}
     for item in args.secret:
@@ -379,6 +391,9 @@ def deploy(args: argparse.Namespace) -> None:
         if deployment_status in TERMINAL_STATUSES:
             if deployment_status == "succeeded":
                 print(f"Deployment succeeded: {status.get('url')}")
+                if generated_external_password:
+                    print("External app password generated for this deployment. Save it now; VibeStack stores only a hash.")
+                    print(f"External app password: {generated_external_password}")
                 return
             print("Deployment failed:")
             print(json.dumps(status.get("error") or status, indent=2))

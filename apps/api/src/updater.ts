@@ -81,7 +81,8 @@ async function rootPackageVersion(config: Config, ref = 'HEAD'): Promise<string 
   if (!raw) return undefined;
 
   try {
-    const parsed = JSON.parse(raw) as { version?: unknown };
+    const parsed = JSON.parse(raw) as { version?: unknown; vibestackRelease?: unknown };
+    if (typeof parsed.vibestackRelease === 'string') return parsed.vibestackRelease;
     return typeof parsed.version === 'string' ? parsed.version : undefined;
   } catch {
     return undefined;
@@ -91,7 +92,8 @@ async function rootPackageVersion(config: Config, ref = 'HEAD'): Promise<string 
 async function localPackageVersion(config: Config): Promise<string> {
   try {
     const raw = await readFile(path.join(config.sourceDir, 'package.json'), 'utf8');
-    const parsed = JSON.parse(raw) as { version?: unknown };
+    const parsed = JSON.parse(raw) as { version?: unknown; vibestackRelease?: unknown };
+    if (typeof parsed.vibestackRelease === 'string') return parsed.vibestackRelease;
     if (typeof parsed.version === 'string') return parsed.version;
   } catch {
     // Fall through to the static package version copied into the API image.
@@ -99,7 +101,8 @@ async function localPackageVersion(config: Config): Promise<string> {
 
   try {
     const raw = await readFile(path.resolve(process.cwd(), '../../package.json'), 'utf8');
-    const parsed = JSON.parse(raw) as { version?: unknown };
+    const parsed = JSON.parse(raw) as { version?: unknown; vibestackRelease?: unknown };
+    if (typeof parsed.vibestackRelease === 'string') return parsed.vibestackRelease;
     if (typeof parsed.version === 'string') return parsed.version;
   } catch {
     // Fall through to a stable unknown marker.
