@@ -180,6 +180,10 @@ export type AuditLog = {
   id: string;
   actorUserId?: string | null;
   actor_user_id?: string | null;
+  actorUserEmail?: string | null;
+  actor_user_email?: string | null;
+  actorUserDisplayName?: string | null;
+  actor_user_display_name?: string | null;
   actorType?: 'user' | 'api_token' | 'system' | string;
   actor_type?: 'user' | 'api_token' | 'system' | string;
   action: string;
@@ -187,6 +191,16 @@ export type AuditLog = {
   target_type?: string;
   targetId?: string;
   target_id?: string;
+  targetUserEmail?: string | null;
+  target_user_email?: string | null;
+  targetUserDisplayName?: string | null;
+  target_user_display_name?: string | null;
+  targetAppName?: string | null;
+  target_app_name?: string | null;
+  targetAppHostname?: string | null;
+  target_app_hostname?: string | null;
+  targetTeamName?: string | null;
+  target_team_name?: string | null;
   sourceIp?: string;
   source_ip?: string;
   metadataJson?: Record<string, unknown>;

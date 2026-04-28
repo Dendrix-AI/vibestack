@@ -1094,9 +1094,9 @@ function AuditView({ logs }: { logs: AuditLog[] }) {
             {logs.length === 0 ? <tr><td colSpan={5}>No audit events returned by the API.</td></tr> : logs.map((log) => (
               <tr key={log.id}>
                 <td>{formatDate(log.createdAt ?? log.created_at)}</td>
-                <td>{log.actorType ?? log.actor_type ?? 'system'} {log.actorUserId ?? log.actor_user_id ?? ''}</td>
+                <td>{auditActor(log)}</td>
                 <td><code>{log.action}</code></td>
-                <td>{log.targetType ?? log.target_type ?? '-'} {log.targetId ?? log.target_id ?? ''}</td>
+                <td>{auditTarget(log)}</td>
                 <td>{log.sourceIp ?? log.source_ip ?? '-'}</td>
               </tr>
             ))}
@@ -1105,6 +1105,36 @@ function AuditView({ logs }: { logs: AuditLog[] }) {
       </div>
     </section>
   );
+}
+
+function auditActor(log: AuditLog): string {
+  const actorType = log.actorType ?? log.actor_type ?? 'system';
+  if (actorType === 'system') return 'system';
+
+  const name = log.actorUserDisplayName ?? log.actor_user_display_name ?? log.actorUserEmail ?? log.actor_user_email;
+  if (!name) return actorType;
+  return actorType === 'api_token' ? `${name} (API token)` : name;
+}
+
+function auditTarget(log: AuditLog): string {
+  const targetType = log.targetType ?? log.target_type ?? '-';
+  const fallbackId = log.targetId ?? log.target_id ?? '';
+
+  if (targetType === 'user') {
+    return log.targetUserDisplayName ?? log.target_user_display_name ?? log.targetUserEmail ?? log.target_user_email ?? fallbackId;
+  }
+
+  if (targetType === 'app') {
+    const appName = log.targetAppName ?? log.target_app_name;
+    const hostname = log.targetAppHostname ?? log.target_app_hostname;
+    return appName ? `${appName}${hostname ? ` (${hostname})` : ''}` : fallbackId;
+  }
+
+  if (targetType === 'team') {
+    return log.targetTeamName ?? log.target_team_name ?? fallbackId;
+  }
+
+  return fallbackId ? `${targetType} ${fallbackId}` : targetType;
 }
 
 function Stat({ icon: Icon, label, value, tone = 'neutral' }: { icon: typeof AppWindow; label: string; value: string; tone?: string }) {

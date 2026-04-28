@@ -329,6 +329,25 @@ function forwardedHost(request: FastifyRequest): string {
   return hostname;
 }
 
+function firstHeaderValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function clientIp(request: FastifyRequest): string {
+  const cloudflareIp = firstHeaderValue(request.headers['cf-connecting-ip']);
+  if (cloudflareIp) return cloudflareIp.trim();
+
+  const trueClientIp = firstHeaderValue(request.headers['true-client-ip']);
+  if (trueClientIp) return trueClientIp.trim();
+
+  const realIp = firstHeaderValue(request.headers['x-real-ip']);
+  if (realIp) return realIp.trim();
+
+  const forwardedFor = firstHeaderValue(request.headers['x-forwarded-for']);
+  const firstForwardedIp = forwardedFor?.split(',')[0]?.trim();
+  return firstForwardedIp || request.ip;
+}
+
 async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db, config } = ctx;
 
@@ -344,7 +363,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
         action: 'auth.login_failed',
         targetType: 'user',
         targetId: body.email.toLowerCase(),
-        sourceIp: request.ip
+        sourceIp: clientIp(request)
       });
       throw new HttpError({ code: 'INVALID_CREDENTIALS', message: 'Invalid email or password.', statusCode: 401 });
     }
@@ -356,7 +375,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       action: 'auth.login_success',
       targetType: 'user',
       targetId: user.id,
-      sourceIp: request.ip
+      sourceIp: clientIp(request)
     });
     return { user: publicUser(user) };
   });
@@ -442,7 +461,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       action: 'app.access_denied',
       targetType: 'app',
       targetId: appRow.id,
-      sourceIp: request.ip,
+      sourceIp: clientIp(request),
       metadata: { host }
     });
     return reply.code(401).send('Authentication required');
@@ -464,7 +483,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       action: ok ? 'app.external_password_success' : 'app.external_password_failed',
       targetType: 'app',
       targetId: appRow.id,
-      sourceIp: request.ip
+      sourceIp: clientIp(request)
     });
     if (!ok) {
       throw new HttpError({ code: 'INVALID_APP_PASSWORD', message: 'Invalid app password.', statusCode: 401 });
@@ -505,7 +524,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
         body.isPlatformAdmin ?? false
       ]
     );
-    await writeAuditLog(db, { actor, action: 'user.created', targetType: 'user', targetId: user.id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'user.created', targetType: 'user', targetId: user.id, sourceIp: clientIp(request) });
     return reply.status(201).send({ user: publicUser(user) });
   });
 
@@ -532,7 +551,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
         passwordHash
       ]
     );
-    await writeAuditLog(db, { actor, action: 'user.updated', targetType: 'user', targetId: user.id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'user.updated', targetType: 'user', targetId: user.id, sourceIp: clientIp(request) });
     return { user: publicUser(user) };
   });
 
@@ -559,7 +578,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       'INSERT INTO teams (name, slug) VALUES ($1, $2) RETURNING *',
       [body.name, slugify(body.slug ?? body.name)]
     );
-    await writeAuditLog(db, { actor, action: 'team.created', targetType: 'team', targetId: team.id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'team.created', targetType: 'team', targetId: team.id, sourceIp: clientIp(request) });
     return reply.status(201).send({ team });
   });
 
@@ -593,7 +612,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       `UPDATE teams SET name = $2, deployments_paused = $3, updated_at = now() WHERE id = $1 RETURNING *`,
       [id, body.name ?? current.name, body.deploymentsPaused ?? current.deployments_paused]
     );
-    await writeAuditLog(db, { actor, action: 'team.updated', targetType: 'team', targetId: team.id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'team.updated', targetType: 'team', targetId: team.id, sourceIp: clientIp(request) });
     return { team };
   });
 
@@ -614,7 +633,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       action: 'team.member_upserted',
       targetType: 'team',
       targetId: id,
-      sourceIp: request.ip,
+      sourceIp: clientIp(request),
       metadata: { userId: body.userId, role: body.role }
     });
     return reply.status(201).send({ membership });
@@ -637,7 +656,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       action: 'team.member_updated',
       targetType: 'team',
       targetId: teamId,
-      sourceIp: request.ip,
+      sourceIp: clientIp(request),
       metadata: { userId, role: body.role }
     });
     return { membership };
@@ -653,7 +672,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       action: 'team.member_removed',
       targetType: 'team',
       targetId: teamId,
-      sourceIp: request.ip,
+      sourceIp: clientIp(request),
       metadata: { userId }
     });
     return { ok: true };
@@ -680,7 +699,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
        RETURNING id, name, created_at AS "createdAt"`,
       [actor.user.id, body.name, sha256(token)]
     );
-    await writeAuditLog(db, { actor, action: 'api_token.created', targetType: 'api_token', targetId: row.id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'api_token.created', targetType: 'api_token', targetId: row.id, sourceIp: clientIp(request) });
     return reply.status(201).send({ token: { ...row, value: token } });
   });
 
@@ -693,7 +712,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       [id, actor.user.id]
     );
     if (result.rowCount === 0) throw notFound('API token not found.');
-    await writeAuditLog(db, { actor, action: 'api_token.revoked', targetType: 'api_token', targetId: id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'api_token.revoked', targetType: 'api_token', targetId: id, sourceIp: clientIp(request) });
     return { ok: true };
   });
 
@@ -728,7 +747,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
         [key, JSON.stringify(value), actor.user.id]
       );
     }
-    await writeAuditLog(db, { actor, action: 'settings.updated', targetType: 'settings', sourceIp: request.ip, metadata: { keys: Object.keys(body) } });
+    await writeAuditLog(db, { actor, action: 'settings.updated', targetType: 'settings', sourceIp: clientIp(request), metadata: { keys: Object.keys(body) } });
     return { settings: await currentSettings(db, config) };
   });
 
@@ -792,7 +811,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       eventType: 'app.created',
       message: 'App created.'
     });
-    await writeAuditLog(db, { actor, action: 'app.created', targetType: 'app', targetId: appRow.id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'app.created', targetType: 'app', targetId: appRow.id, sourceIp: clientIp(request) });
     return reply.status(201).send({ app: appResponse(appRow) });
   });
 
@@ -835,7 +854,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       eventType: 'app.updated',
       message: 'App settings updated.'
     });
-    await writeAuditLog(db, { actor, action: 'app.updated', targetType: 'app', targetId: id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'app.updated', targetType: 'app', targetId: id, sourceIp: clientIp(request) });
     return { app: appResponse(appRow) };
   });
 
@@ -845,7 +864,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
     await getAuthorizedApp(db, actor, id, 'team_admin');
     const result = await hardDeleteApp(db, config, id);
     if (!result.deleted) throw notFound('App not found.');
-    await writeAuditLog(db, { actor, action: 'app.deleted', targetType: 'app', targetId: id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'app.deleted', targetType: 'app', targetId: id, sourceIp: clientIp(request) });
     return { ok: true };
   });
 
@@ -858,7 +877,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
     }
     const appRow = await db.one<AppRow>("UPDATE apps SET status = 'running', updated_at = now() WHERE id = $1 RETURNING *", [id]);
     await addAppEvent(db, { appId: id, actorUserId: actor.user.id, eventType: 'app.started', message: 'App marked running.' });
-    await writeAuditLog(db, { actor, action: 'app.started', targetType: 'app', targetId: id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'app.started', targetType: 'app', targetId: id, sourceIp: clientIp(request) });
     return { app: appResponse(appRow) };
   });
 
@@ -871,7 +890,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
     }
     const appRow = await db.one<AppRow>("UPDATE apps SET status = 'stopped', updated_at = now() WHERE id = $1 RETURNING *", [id]);
     await addAppEvent(db, { appId: id, actorUserId: actor.user.id, eventType: 'app.stopped', message: 'App marked stopped.' });
-    await writeAuditLog(db, { actor, action: 'app.stopped', targetType: 'app', targetId: id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'app.stopped', targetType: 'app', targetId: id, sourceIp: clientIp(request) });
     return { app: appResponse(appRow) };
   });
 
@@ -960,7 +979,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       action: existing ? 'deployment.started' : 'app.created_and_deployed',
       targetType: 'deployment',
       targetId: deployment.id,
-      sourceIp: request.ip
+      sourceIp: clientIp(request)
     });
     return reply.status(202).send({ appId: appRow.id, deploymentId: deployment.id, status: deployment.status });
   });
@@ -994,7 +1013,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       metadata: { runtimeDriver: config.runtimeDriver }
     });
     await deploymentQueue.add('deployment', { deploymentId: deployment.id });
-    await writeAuditLog(db, { actor, action: 'deployment.started', targetType: 'deployment', targetId: deployment.id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'deployment.started', targetType: 'deployment', targetId: deployment.id, sourceIp: clientIp(request) });
     return reply.status(202).send({ appId: id, deploymentId: deployment.id, status: deployment.status });
   });
 
@@ -1041,7 +1060,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       actor.user.id
     ]);
     await deploymentQueue.add('deployment', { deploymentId: deployment.id });
-    await writeAuditLog(db, { actor, action: 'deployment.rollback', targetType: 'deployment', targetId: deployment.id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'deployment.rollback', targetType: 'deployment', targetId: deployment.id, sourceIp: clientIp(request) });
     return reply.status(202).send({ appId: id, deploymentId: deployment.id, status: deployment.status });
   });
 
@@ -1103,7 +1122,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       [appId, secretKey, encryptSecret(body.value, config.secretKey), actor.user.id]
     );
     await addAppEvent(db, { appId, actorUserId: actor.user.id, eventType: 'secret.upserted', message: `Secret ${secretKey} updated.` });
-    await writeAuditLog(db, { actor, action: 'secret.upserted', targetType: 'app', targetId: appId, sourceIp: request.ip, metadata: { key: secretKey } });
+    await writeAuditLog(db, { actor, action: 'secret.upserted', targetType: 'app', targetId: appId, sourceIp: clientIp(request), metadata: { key: secretKey } });
     return { key: secretKey, valueVisible: false };
   });
 
@@ -1114,7 +1133,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
     const secretKey = requireSecretKeyName(key);
     await db.query('DELETE FROM app_secrets WHERE app_id = $1 AND key = $2', [appId, secretKey]);
     await addAppEvent(db, { appId, actorUserId: actor.user.id, eventType: 'secret.deleted', message: `Secret ${secretKey} deleted.` });
-    await writeAuditLog(db, { actor, action: 'secret.deleted', targetType: 'app', targetId: appId, sourceIp: request.ip, metadata: { key: secretKey } });
+    await writeAuditLog(db, { actor, action: 'secret.deleted', targetType: 'app', targetId: appId, sourceIp: clientIp(request), metadata: { key: secretKey } });
     return { ok: true };
   });
 
@@ -1134,7 +1153,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       [id, dbName, dbUser, encryptSecret(password, config.secretKey)]
     );
     await db.query('UPDATE apps SET postgres_enabled = true, updated_at = now() WHERE id = $1', [id]);
-    await writeAuditLog(db, { actor, action: 'postgres.enabled', targetType: 'app', targetId: id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'postgres.enabled', targetType: 'app', targetId: id, sourceIp: clientIp(request) });
     return { credentials };
   });
 
@@ -1144,7 +1163,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
     await getAuthorizedApp(db, actor, id, 'creator');
     await db.query('UPDATE app_db_credentials SET deleted_at = now() WHERE app_id = $1', [id]);
     await db.query('UPDATE apps SET postgres_enabled = false, updated_at = now() WHERE id = $1', [id]);
-    await writeAuditLog(db, { actor, action: 'postgres.disabled', targetType: 'app', targetId: id, sourceIp: request.ip });
+    await writeAuditLog(db, { actor, action: 'postgres.disabled', targetType: 'app', targetId: id, sourceIp: clientIp(request) });
     return { ok: true };
   });
 
@@ -1185,13 +1204,30 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
     const actor = await requireActor(db, request);
     requirePlatformAdmin(actor);
     const query = parseQuery(DeploymentQuery, request);
-    const logs = await db.query('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT $1', [query.limit]);
+    const logs = await db.query(
+      `SELECT audit_logs.*,
+              actor_users.email AS actor_user_email,
+              actor_users.display_name AS actor_user_display_name,
+              target_users.email AS target_user_email,
+              target_users.display_name AS target_user_display_name,
+              target_apps.name AS target_app_name,
+              target_apps.hostname AS target_app_hostname,
+              target_teams.name AS target_team_name
+       FROM audit_logs
+       LEFT JOIN users actor_users ON actor_users.id = audit_logs.actor_user_id
+       LEFT JOIN users target_users ON audit_logs.target_type = 'user' AND target_users.id::text = audit_logs.target_id
+       LEFT JOIN apps target_apps ON audit_logs.target_type = 'app' AND target_apps.id::text = audit_logs.target_id
+       LEFT JOIN teams target_teams ON audit_logs.target_type = 'team' AND target_teams.id::text = audit_logs.target_id
+       ORDER BY audit_logs.created_at DESC
+       LIMIT $1`,
+      [query.limit]
+    );
     return { auditLogs: logs.rows };
   });
 }
 
 export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: true, trustProxy: true });
   await app.register(cookie, { secret: ctx.config.sessionSecret });
   await app.register(cors, { origin: true, credentials: true });
   await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024, files: 1 } });
