@@ -607,10 +607,12 @@ textarea:focus {
 }
 
 .status-pill {
+  align-items: center;
   border-radius: 999px;
   display: inline-flex;
   font-size: 0.78rem;
   font-weight: 800;
+  gap: 6px;
   padding: 6px 9px;
   text-transform: uppercase;
 }

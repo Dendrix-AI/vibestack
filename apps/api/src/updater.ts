@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { Config } from './config.js';
@@ -53,6 +53,11 @@ async function readPersistedStatus(config: Config): Promise<PersistedUpdateStatu
   } catch {
     return {};
   }
+}
+
+async function writePersistedStatus(config: Config, status: PersistedUpdateStatus): Promise<void> {
+  await mkdir(path.join(config.sourceDir, STATUS_DIR), { recursive: true });
+  await writeFile(statusPath(config), `${JSON.stringify(status)}\n`, 'utf8');
 }
 
 async function git(config: Config, args: string[]): Promise<string> {
@@ -144,7 +149,9 @@ export async function getSelfUpdateStatus(config: Config, refresh: boolean): Pro
     (await optionalGit(config, ['describe', '--tags', '--exact-match', 'HEAD'])) ??
     (await optionalGit(config, ['describe', '--tags', '--always', '--dirty']));
   const latestRevision = await optionalGit(config, ['rev-parse', latestRef]);
-  const latestTag = await optionalGit(config, ['describe', '--tags', '--abbrev=0', latestRef]);
+  const latestTag =
+    (await optionalGit(config, ['describe', '--tags', '--exact-match', latestRef])) ??
+    (await optionalGit(config, ['describe', '--tags', '--always', latestRef]));
   const latestVersion = latestRevision ? await rootPackageVersion(config, latestRef) : undefined;
 
   return {
@@ -216,36 +223,51 @@ export async function startSelfUpdate(config: Config): Promise<SelfUpdateStatus>
     return current;
   }
 
-  await mkdir(path.join(config.sourceDir, STATUS_DIR), { recursive: true });
+  const startedAt = new Date().toISOString();
+  await writePersistedStatus(config, {
+    state: 'running',
+    message: 'Update started.',
+    startedAt
+  });
   const name = `vibestack-self-update-${Date.now()}`;
-  await execFileAsync(
-    'docker',
-    [
-      'run',
-      '-d',
-      '--rm',
-      '--name',
-      name,
-      '--label',
-      'vibestack.role=self-updater',
-      '-v',
-      '/var/run/docker.sock:/var/run/docker.sock',
-      '-v',
-      `${config.installDir}:/workspace`,
-      '-w',
-      '/workspace',
-      'docker:29-cli',
-      'sh',
-      '-lc',
-      updateScript(config)
-    ],
-    { timeout: 60_000, maxBuffer: 1024 * 1024 }
-  );
+  try {
+    await execFileAsync(
+      'docker',
+      [
+        'run',
+        '-d',
+        '--rm',
+        '--name',
+        name,
+        '--label',
+        'vibestack.role=self-updater',
+        '-v',
+        '/var/run/docker.sock:/var/run/docker.sock',
+        '-v',
+        `${config.installDir}:/workspace`,
+        '-w',
+        '/workspace',
+        'docker:29-cli',
+        'sh',
+        '-lc',
+        updateScript(config)
+      ],
+      { timeout: 60_000, maxBuffer: 1024 * 1024 }
+    );
+  } catch (error) {
+    await writePersistedStatus(config, {
+      state: 'failed',
+      message: error instanceof Error ? error.message : 'Update failed to start.',
+      startedAt,
+      finishedAt: new Date().toISOString()
+    });
+    throw error;
+  }
 
   return {
     ...current,
     state: 'running',
     message: 'Update started.',
-    startedAt: new Date().toISOString()
+    startedAt
   };
 }
