@@ -34,6 +34,7 @@ import { deploymentQueue } from './queue.js';
 import { hardDeleteApp } from './runtime-cleanup.js';
 import { dockerLogsForDeployment, startExistingAppContainer, stopAppContainer } from './deployment/runtime.js';
 import { publicCloudflareSetting } from './cloudflare.js';
+import { getSelfUpdateStatus, startSelfUpdate } from './updater.js';
 
 type AppContext = {
   config: Config;
@@ -313,6 +314,7 @@ const TeamMemberParam = z.object({ teamId: z.string().uuid(), userId: z.string()
 const AppSecretParam = z.object({ appId: z.string().uuid(), key: z.string().min(1).max(128) });
 const DeploymentQuery = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50) });
 const LogQuery = z.object({ tail: z.coerce.number().int().min(1).max(1000).default(200) });
+const UpdateQuery = z.object({ refresh: z.string().optional() });
 
 function appPasswordCookieName(appId: string): string {
   return `vibestack_app_${appId.replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -749,6 +751,36 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
     }
     await writeAuditLog(db, { actor, action: 'settings.updated', targetType: 'settings', sourceIp: clientIp(request), metadata: { keys: Object.keys(body) } });
     return { settings: await currentSettings(db, config) };
+  });
+
+  app.get('/api/v1/system/update', async (request) => {
+    const actor = await requireActor(db, request);
+    requirePlatformAdmin(actor);
+    const query = parseQuery(UpdateQuery, request);
+    return { update: await getSelfUpdateStatus(config, query.refresh === 'true' || query.refresh === '1') };
+  });
+
+  app.post('/api/v1/system/update', async (request, reply) => {
+    const actor = await requireActor(db, request);
+    requirePlatformAdmin(actor);
+    try {
+      const update = await startSelfUpdate(config);
+      await writeAuditLog(db, {
+        actor,
+        action: 'system.update_started',
+        targetType: 'system',
+        sourceIp: clientIp(request),
+        metadata: {
+          currentRevision: update.currentRevision,
+          latestRevision: update.latestRevision,
+          channel: update.channel
+        }
+      });
+      return reply.status(202).send({ update });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to start update.';
+      throw new HttpError({ code: 'UPDATE_FAILED', message, statusCode: 400 });
+    }
   });
 
   app.get('/api/v1/apps', async (request) => {

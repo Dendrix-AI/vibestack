@@ -10,8 +10,10 @@ import {
   Cloud,
   Copy,
   Database,
+  Download,
   Eye,
   EyeOff,
+  GitBranch,
   History,
   KeyRound,
   LifeBuoy,
@@ -41,6 +43,7 @@ import type {
   LifecycleEvent,
   LogLine,
   PlatformSettings,
+  SystemUpdate,
   Team,
   User
 } from './types';
@@ -117,6 +120,11 @@ function formatDate(value?: string | null): string {
   }).format(new Date(value));
 }
 
+function shortRef(value?: string): string {
+  if (!value) return '';
+  return value.length > 16 ? `(${value.slice(0, 7)})` : `(${value})`;
+}
+
 function statusTone(status: AppStatus | Deployment['status'] | string): string {
   if (['running', 'succeeded'].includes(status)) return 'good';
   if (['failed', 'cancelled'].includes(status)) return 'bad';
@@ -156,6 +164,7 @@ function App() {
   const [apps, setApps] = useState<AppSummary[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [settings, setSettings] = useState<PlatformSettings>({});
+  const [systemUpdate, setSystemUpdate] = useState<SystemUpdate>();
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [detail, setDetail] = useState<DetailState>(emptyDetail);
@@ -218,16 +227,18 @@ function App() {
       setSelectedAppId((current) => current ?? nextApps[0]?.id ?? null);
 
       if (isAdmin(user)) {
-        const [nextUsers, nextSettings, nextTokens, nextAuditLogs] = await Promise.all([
+        const [nextUsers, nextSettings, nextTokens, nextAuditLogs, nextSystemUpdate] = await Promise.all([
           api.listUsers(),
           api.getSettings(),
           api.listTokens(),
-          api.listAuditLogs()
+          api.listAuditLogs(),
+          api.getSystemUpdate()
         ]);
         setUsers(nextUsers);
         setSettings(nextSettings);
         setTokens(nextTokens);
         setAuditLogs(nextAuditLogs);
+        setSystemUpdate(nextSystemUpdate);
       }
     } catch (caught) {
       setError(formatApiError(caught));
@@ -355,7 +366,15 @@ function App() {
 
         {view === 'users' ? <UsersView users={users} teams={teams} onCreate={handleCreateUser} onUpdate={handleUpdateUser} /> : null}
         {view === 'teams' ? <TeamsView teams={teams} onCreate={handleCreateTeam} onTogglePause={handleToggleTeamPause} /> : null}
-        {view === 'settings' ? <SettingsView settings={settings} onSave={handleSaveSettings} /> : null}
+        {view === 'settings' ? (
+          <SettingsView
+            settings={settings}
+            update={systemUpdate}
+            onSave={handleSaveSettings}
+            onCheckUpdate={handleCheckUpdate}
+            onStartUpdate={handleStartUpdate}
+          />
+        ) : null}
         {view === 'tokens' ? <TokensView tokens={tokens} onCreate={handleCreateToken} onRevoke={handleRevokeToken} /> : null}
         {view === 'audit' ? <AuditView logs={auditLogs} /> : null}
       </main>
@@ -446,6 +465,14 @@ function App() {
 
   async function handleSaveSettings(payload: PlatformSettings) {
     setSettings(await api.updateSettings(payload));
+  }
+
+  async function handleCheckUpdate() {
+    setSystemUpdate(await api.getSystemUpdate(true));
+  }
+
+  async function handleStartUpdate() {
+    setSystemUpdate(await api.startSystemUpdate());
   }
 
   async function handleCreateToken(name: string): Promise<ApiToken> {
@@ -940,10 +967,23 @@ function TeamsView({ teams, onCreate, onTogglePause }: { teams: Team[]; onCreate
   );
 }
 
-function SettingsView({ settings, onSave }: { settings: PlatformSettings; onSave: (payload: PlatformSettings) => Promise<void> }) {
+function SettingsView({
+  settings,
+  update,
+  onSave,
+  onCheckUpdate,
+  onStartUpdate
+}: {
+  settings: PlatformSettings;
+  update?: SystemUpdate;
+  onSave: (payload: PlatformSettings) => Promise<void>;
+  onCheckUpdate: () => Promise<void>;
+  onStartUpdate: () => Promise<void>;
+}) {
   const [draft, setDraft] = useState<PlatformSettings>(settings);
   const [cloudflareToken, setCloudflareToken] = useState('');
   const [saved, setSaved] = useState(false);
+  const [updateBusy, setUpdateBusy] = useState<'check' | 'apply'>();
   const [error, setError] = useState<string>();
 
   useEffect(() => {
@@ -978,6 +1018,32 @@ function SettingsView({ settings, onSave }: { settings: PlatformSettings; onSave
   const cloudflare = draft.cloudflare ?? {};
   const cloudflareZoneId = cloudflare.zoneId ?? cloudflare.zone_id ?? '';
   const cloudflareConfigured = Boolean(cloudflare.configured ?? cloudflare.apiTokenConfigured ?? cloudflare.api_token_configured);
+  const updateAvailable = Boolean(update?.updateAvailable);
+  const updateRunning = update?.state === 'running';
+
+  async function checkUpdate() {
+    setError(undefined);
+    setUpdateBusy('check');
+    try {
+      await onCheckUpdate();
+    } catch (caught) {
+      setError(formatApiError(caught));
+    } finally {
+      setUpdateBusy(undefined);
+    }
+  }
+
+  async function startUpdate() {
+    setError(undefined);
+    setUpdateBusy('apply');
+    try {
+      await onStartUpdate();
+    } catch (caught) {
+      setError(formatApiError(caught));
+    } finally {
+      setUpdateBusy(undefined);
+    }
+  }
 
   return (
     <form className="settings-grid" onSubmit={submit}>
@@ -1001,6 +1067,26 @@ function SettingsView({ settings, onSave }: { settings: PlatformSettings; onSave
         <span className={`status-pill ${cloudflareConfigured ? 'good' : 'neutral'}`}>
           {cloudflareConfigured ? 'configured' : 'not configured'}
         </span>
+      </section>
+      <section className="panel">
+        <PanelTitle icon={GitBranch} title="Version" />
+        <dl className="version-list">
+          <div><dt>Current</dt><dd>{update?.currentVersion ?? '0.1.0'} {shortRef(update?.currentTag ?? update?.currentRevision)}</dd></div>
+          <div><dt>Latest</dt><dd>{update?.latestVersion ?? '-'} {shortRef(update?.latestTag ?? update?.latestRevision)}</dd></div>
+          <div><dt>Channel</dt><dd>{update?.channel ?? 'main'}</dd></div>
+        </dl>
+        <span className={`status-pill ${updateRunning ? 'busy' : updateAvailable ? 'good' : update?.sourceAvailable === false ? 'bad' : 'neutral'}`}>
+          {updateRunning ? 'updating' : updateAvailable ? 'update available' : update?.sourceAvailable === false ? 'unavailable' : 'up to date'}
+        </span>
+        {update?.message ? <p className="muted">{update.message}</p> : null}
+        <div className="button-row">
+          <button type="button" className="button secondary" onClick={() => void checkUpdate()} disabled={Boolean(updateBusy) || updateRunning}>
+            {updateBusy === 'check' ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} Check
+          </button>
+          <button type="button" className="button primary" onClick={() => void startUpdate()} disabled={!updateAvailable || Boolean(updateBusy) || updateRunning}>
+            {updateBusy === 'apply' ? <Loader2 className="spin" size={16} /> : <Download size={16} />} Update
+          </button>
+        </div>
       </section>
       <div className="settings-actions">
         <ErrorBanner message={error} />

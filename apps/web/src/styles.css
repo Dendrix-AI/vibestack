@@ -676,6 +676,36 @@ textarea:focus {
   justify-content: flex-start;
 }
 
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.version-list {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.version-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.version-list dt {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.version-list dd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  margin: 0;
+  text-align: right;
+}
+
 .secret-form {
   display: grid;
   gap: 10px;

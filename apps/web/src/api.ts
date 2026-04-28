@@ -11,6 +11,7 @@ import type {
   MeResponse,
   PlatformSettings,
   PostgresCredentials,
+  SystemUpdate,
   Team,
   TeamMembership,
   User
@@ -288,6 +289,18 @@ export const api = {
   updateSettings(payload: Partial<PlatformSettings>): Promise<PlatformSettings> {
     return request<unknown>('/settings', { method: 'PATCH', body: payload }).then((value) =>
       unwrap<PlatformSettings>(value, 'settings')
+    );
+  },
+
+  getSystemUpdate(refresh = false): Promise<SystemUpdate> {
+    return request<unknown>(`/system/update${refresh ? '?refresh=true' : ''}`).then((value) =>
+      unwrap<SystemUpdate>(value, 'update')
+    );
+  },
+
+  startSystemUpdate(): Promise<SystemUpdate> {
+    return request<unknown>('/system/update', { method: 'POST' }).then((value) =>
+      unwrap<SystemUpdate>(value, 'update')
     );
   },
 

@@ -235,6 +235,23 @@ export type PlatformSettings = {
   announcement_banner?: string;
 };
 
+export type SystemUpdate = {
+  currentVersion: string;
+  currentRevision?: string;
+  currentTag?: string;
+  latestVersion?: string;
+  latestRevision?: string;
+  latestTag?: string;
+  updateAvailable: boolean;
+  sourceAvailable: boolean;
+  state: 'idle' | 'checking' | 'running' | 'succeeded' | 'failed' | 'unavailable' | string;
+  message?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  repoUrl: string;
+  channel: string;
+};
+
 export type MeResponse = {
   user: User;
   teams?: Team[];

@@ -24,6 +24,7 @@ pnpm-debug.log*
 
 # Local VibeStack runtime data
 .vibestack-data/
+.vibestack-update/
 
 # Private planning and implementation notes
 IMPLEMENTATION_LOG.md

@@ -67,6 +67,10 @@ services:
       VIBESTACK_PUBLIC_URL: ${VIBESTACK_PUBLIC_URL:?VIBESTACK_PUBLIC_URL is required}
       VIBESTACK_BASE_DOMAIN: ${VIBESTACK_BASE_DOMAIN:?VIBESTACK_BASE_DOMAIN is required}
       VIBESTACK_COOKIE_DOMAIN: ${VIBESTACK_COOKIE_DOMAIN:-}
+      VIBESTACK_INSTALL_DIR: ${VIBESTACK_INSTALL_DIR:-/opt/vibestack}
+      VIBESTACK_SOURCE_DIR: /opt/vibestack-source
+      VIBESTACK_REPO_URL: ${VIBESTACK_REPO_URL:-https://github.com/dankritz/vibestack.git}
+      VIBESTACK_UPDATE_CHANNEL: ${VIBESTACK_UPDATE_CHANNEL:-main}
       VIBESTACK_DATA_DIR: /var/lib/vibestack
       VIBESTACK_SESSION_SECRET: ${VIBESTACK_SESSION_SECRET:?VIBESTACK_SESSION_SECRET is required}
       VIBESTACK_SECRET_KEY: ${VIBESTACK_SECRET_KEY:?VIBESTACK_SECRET_KEY is required}
@@ -102,6 +106,7 @@ services:
       - traefik.http.services.vibestack-api.loadbalancer.server.port=3000
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ${VIBESTACK_INSTALL_DIR:-.}:/opt/vibestack-source
       - vibestack_data:/var/lib/vibestack
     networks:
       - default

@@ -298,17 +298,19 @@ prepare_repo() {
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   repo_root="$(cd "${script_dir}/.." && pwd)"
   if [[ -f "${repo_root}/package.json" && "$(node_name "${repo_root}/package.json")" == "vibestack" ]]; then
-    mkdir -p "$INSTALL_DIR"
-    if [[ "$(realpath "$repo_root")" != "$(realpath "$INSTALL_DIR")" ]]; then
-      rsync -a \
-        --delete \
-        --exclude '.git' \
-        --exclude '.env' \
-        --exclude 'secrets' \
-        --exclude 'node_modules' \
-        --exclude 'dist' \
-        --exclude 'build' \
-        "$repo_root/" "$INSTALL_DIR/"
+    if [[ "$(realpath -m "$repo_root")" != "$(realpath -m "$INSTALL_DIR")" ]]; then
+      mkdir -p "$(dirname "$INSTALL_DIR")"
+      if [[ -d "${INSTALL_DIR}/.git" ]]; then
+        git -C "$INSTALL_DIR" fetch --tags origin
+        git -C "$INSTALL_DIR" pull --ff-only
+      elif [[ -e "$INSTALL_DIR" && -n "$(find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)" ]]; then
+        echo "${INSTALL_DIR} exists but is not a git checkout." >&2
+        echo "Move it aside or choose a different --install-dir before installing." >&2
+        exit 1
+      else
+        rm -rf "$INSTALL_DIR"
+        git clone "$REPO_URL" "$INSTALL_DIR"
+      fi
     fi
     return
   fi
@@ -360,6 +362,10 @@ VIBESTACK_HOST=${VIBESTACK_HOST}
 VIBESTACK_PUBLIC_URL=https://${VIBESTACK_HOST}
 VIBESTACK_BASE_DOMAIN=${BASE_DOMAIN}
 VIBESTACK_COOKIE_DOMAIN=${cookie_domain}
+VIBESTACK_INSTALL_DIR=${INSTALL_DIR}
+VIBESTACK_SOURCE_DIR=/opt/vibestack-source
+VIBESTACK_REPO_URL=${REPO_URL}
+VIBESTACK_UPDATE_CHANNEL=main
 VIBESTACK_DATA_DIR=/var/lib/vibestack
 VIBESTACK_SESSION_SECRET=${session_secret}
 VIBESTACK_SECRET_KEY=${secret_key}
