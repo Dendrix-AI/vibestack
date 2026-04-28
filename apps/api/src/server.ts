@@ -65,7 +65,19 @@ async function currentSettings(db: Db, config: Config): Promise<Record<string, u
       if (row.key === 'cloudflare') {
         const setting = (row.value_json as Record<string, unknown>) ?? {};
         const storedToken = typeof setting.apiToken === 'string' ? setting.apiToken : undefined;
-        return [row.key, publicCloudflareSetting({ ...setting, apiToken: storedToken ?? config.cloudflareApiToken })];
+        const storedEnabled = typeof setting.enabled === 'boolean' ? setting.enabled : undefined;
+        const storedZoneId = typeof setting.zoneId === 'string' ? setting.zoneId : undefined;
+        const storedTargetHostname = typeof setting.targetHostname === 'string' ? setting.targetHostname : undefined;
+        return [
+          row.key,
+          publicCloudflareSetting({
+            ...setting,
+            enabled: storedEnabled ?? Boolean(config.cloudflareApiToken && config.cloudflareZoneId),
+            zoneId: storedZoneId ?? config.cloudflareZoneId,
+            apiToken: storedToken ?? config.cloudflareApiToken,
+            targetHostname: storedTargetHostname ?? config.cloudflareTargetHostname
+          })
+        ];
       }
       return [row.key, row.encrypted ? { configured: true } : row.value_json];
     })

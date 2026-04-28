@@ -59,10 +59,12 @@ sudo ./scripts/install-linux.sh \
   --domain apps.example.com \
   --host vibestack.example.com \
   --email ops@example.com \
-  --admin-email admin@example.com
+  --admin-email admin@example.com \
+  --cloudflare-api-token "$CLOUDFLARE_API_TOKEN" \
+  --cloudflare-zone-id "$CLOUDFLARE_ZONE_ID"
 ```
 
-Before running it, point DNS for the management host and Traefik dashboard host at the server, plus a wildcard record for hosted apps. The installer writes `/opt/vibestack/.env`, stores Traefik dashboard basic auth in `/opt/vibestack/secrets`, exposes only ports 80 and 443, redirects HTTP to HTTPS, and routes deployed apps through Traefik's HTTPS entrypoint with Let's Encrypt certificates.
+Before running it, point DNS for the management host and Traefik dashboard host at the server. The Cloudflare token must be able to edit DNS records in the zone used by the hosted app base domain. The installer writes `/opt/vibestack/.env`, stores Traefik dashboard basic auth in `/opt/vibestack/secrets`, exposes only ports 80 and 443, redirects HTTP to HTTPS, and routes deployed apps through Traefik's HTTPS entrypoint with Let's Encrypt certificates.
 
 ## Current Status
 

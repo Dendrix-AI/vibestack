@@ -14,7 +14,10 @@ describe('API configuration parsing', () => {
         VIBESTACK_PUBLIC_URL: 'https://vibestack.local.test',
         RUNTIME_DRIVER: 'docker',
         TRAEFIK_ENTRYPOINT: 'websecure',
-        TRAEFIK_CERT_RESOLVER: 'letsencrypt'
+        TRAEFIK_CERT_RESOLVER: 'letsencrypt',
+        CLOUDFLARE_API_TOKEN: 'cf-token',
+        CLOUDFLARE_ZONE_ID: 'cf-zone',
+        CLOUDFLARE_TARGET_HOSTNAME: 'vibestack.local.test'
       })
     ).toMatchObject({
       port: 4000,
@@ -22,7 +25,10 @@ describe('API configuration parsing', () => {
       databaseUrl: 'postgres://vibestack_user:secret@postgres:5433/vibestack_test',
       runtimeDriver: 'docker',
       traefikEntrypoint: 'websecure',
-      traefikCertResolver: 'letsencrypt'
+      traefikCertResolver: 'letsencrypt',
+      cloudflareApiToken: 'cf-token',
+      cloudflareZoneId: 'cf-zone',
+      cloudflareTargetHostname: 'vibestack.local.test'
     });
   });
 

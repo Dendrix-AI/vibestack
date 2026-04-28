@@ -23,19 +23,19 @@ Install VibeStack on a Debian/Ubuntu server.
 
 Required flags:
   --domain DOMAIN              Base domain for hosted apps, for example apps.example.com
+  --host HOST                  Public hostname for this VibeStack server, for example vibestack.example.com
   --email EMAIL                Let's Encrypt account email
   --admin-email EMAIL          Initial VibeStack platform admin email
+  --cloudflare-api-token TOKEN Cloudflare API token used for app DNS records
+  --cloudflare-zone-id ID      Cloudflare zone id for the hosted app base domain
 
 Optional flags:
   --admin-password PASSWORD    Initial admin password. Prompts on a TTY, generates otherwise.
-  --host HOST                  VibeStack management host. Default: vibestack.DOMAIN
   --traefik-host HOST          Traefik dashboard host. Default: traefik.DOMAIN
   --dashboard-user USER        Traefik dashboard basic-auth user. Default: admin
   --dashboard-password PASS    Traefik dashboard password. Prompts on a TTY, generates otherwise.
   --install-dir DIR            Install directory. Default: /opt/vibestack
   --repo-url URL               Git repository URL. Default: https://github.com/dankritz/vibestack.git
-  --cloudflare-api-token TOKEN Optional Cloudflare token for VibeStack DNS provisioning
-  --cloudflare-zone-id ID      Optional Cloudflare zone id
   --skip-dns-check             Do not fail if host DNS does not point at this server yet
   -h, --help                   Show this help
 
@@ -44,7 +44,9 @@ Example:
     --domain apps.example.com \
     --host vibestack.example.com \
     --email admin@example.com \
-    --admin-email admin@example.com
+    --admin-email admin@example.com \
+    --cloudflare-api-token TOKEN \
+    --cloudflare-zone-id ZONE_ID
 USAGE
 }
 
@@ -86,6 +88,18 @@ require_value() {
 }
 
 validate_inputs() {
+  [[ "$BASE_DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]] || {
+    echo "--domain must be a valid DNS name." >&2
+    exit 2
+  }
+  [[ "$VIBESTACK_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]] || {
+    echo "--host must be a valid DNS name." >&2
+    exit 2
+  }
+  [[ "$TRAEFIK_DASHBOARD_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]] || {
+    echo "--traefik-host must be a valid DNS name." >&2
+    exit 2
+  }
   [[ "$LETSENCRYPT_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || {
     echo "--email must be a valid email address." >&2
     exit 2
@@ -277,6 +291,7 @@ FIRST_ADMIN_PASSWORD=${FIRST_ADMIN_PASSWORD}
 RUNTIME_DRIVER=docker
 CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
 CLOUDFLARE_ZONE_ID=${CLOUDFLARE_ZONE_ID}
+CLOUDFLARE_TARGET_HOSTNAME=${VIBESTACK_HOST}
 ENV
   chmod 600 "${INSTALL_DIR}/.env"
 }
@@ -290,10 +305,12 @@ main() {
   require_root
   check_os
   require_value "--domain" "$BASE_DOMAIN"
+  require_value "--host" "$VIBESTACK_HOST"
   require_value "--email" "$LETSENCRYPT_EMAIL"
   require_value "--admin-email" "$FIRST_ADMIN_EMAIL"
+  require_value "--cloudflare-api-token" "$CLOUDFLARE_API_TOKEN"
+  require_value "--cloudflare-zone-id" "$CLOUDFLARE_ZONE_ID"
 
-  VIBESTACK_HOST="${VIBESTACK_HOST:-vibestack.${BASE_DOMAIN}}"
   TRAEFIK_DASHBOARD_HOST="${TRAEFIK_DASHBOARD_HOST:-traefik.${BASE_DOMAIN}}"
 
   install_packages

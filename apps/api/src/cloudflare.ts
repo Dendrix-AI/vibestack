@@ -33,9 +33,14 @@ export async function getCloudflareSetting(db: Db, config: Config): Promise<Clou
   const row = await db.maybeOne<{ value_json: CloudflareSetting }>(
     "SELECT value_json FROM platform_settings WHERE key = 'cloudflare'"
   );
+  const stored = row?.value_json ?? {};
   return {
-    ...(row?.value_json ?? {}),
-    apiToken: row?.value_json?.apiToken ?? config.cloudflareApiToken ?? null
+    ...stored,
+    enabled: stored.enabled ?? Boolean(config.cloudflareApiToken && config.cloudflareZoneId),
+    zoneId: stored.zoneId ?? config.cloudflareZoneId ?? null,
+    apiToken: stored.apiToken ?? config.cloudflareApiToken ?? null,
+    recordType: stored.recordType ?? 'CNAME',
+    targetHostname: stored.targetHostname ?? config.cloudflareTargetHostname ?? null
   };
 }
 

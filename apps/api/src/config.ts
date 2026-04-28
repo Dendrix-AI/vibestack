@@ -16,6 +16,8 @@ const ConfigSchema = z.object({
   traefikCertResolver: z.string().min(1).default('letsencrypt'),
   gatewayAuthUrl: z.string().url().default('http://api:3000/api/v1/gateway/forward-auth'),
   cloudflareApiToken: z.string().min(1).optional(),
+  cloudflareZoneId: z.string().min(1).optional(),
+  cloudflareTargetHostname: z.string().min(1).optional(),
   firstAdminEmail: z.string().email().optional(),
   firstAdminPassword: z.string().min(8).optional()
 });
@@ -57,6 +59,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     traefikCertResolver: env.TRAEFIK_CERT_RESOLVER,
     gatewayAuthUrl: env.VIBESTACK_GATEWAY_AUTH_URL,
     cloudflareApiToken: env.CLOUDFLARE_API_TOKEN,
+    cloudflareZoneId: env.CLOUDFLARE_ZONE_ID,
+    cloudflareTargetHostname: env.CLOUDFLARE_TARGET_HOSTNAME,
     firstAdminEmail: env.FIRST_ADMIN_EMAIL,
     firstAdminPassword: env.FIRST_ADMIN_PASSWORD
   });
