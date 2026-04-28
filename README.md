@@ -52,20 +52,22 @@ The skill also includes a reference API contract and a helper script:
 
 ## App Creator Onboarding
 
-App creators should not need to clone this repository, read deployment docs, or learn Docker. Give them the VibeStack hostname, their team slug, and instructions for creating a personal API token in VibeStack. Then they can paste this prompt into Claude Code from inside their app project:
+App creators should not need to clone this repository, read deployment docs, or learn Docker. Give them the VibeStack hostname, hosted app base domain, their team slug, and instructions for creating a personal API token in VibeStack. Then they can paste this prompt into Claude Code once to install the reusable deployment skill:
 
 ```text
-I want you to set up VibeStack deployment for this app in Claude Code.
+I want you to install the reusable VibeStack deployment skill in Claude Code.
 
 First, ask me for:
 - My VibeStack hostname, for example https://vibestack.example.com
-- My VibeStack team name or team slug
-- The app name I want to use in VibeStack
-- Whether this app should require VibeStack login, an external password, or both
-- Whether this app needs a Postgres database
-- My VibeStack API token
+- My hosted app base domain, for example apps.example.com
+- My default VibeStack team name or team slug
+- Whether future apps should default to VibeStack login access, external-password access, or both
+- Whether future apps should default to no database unless I explicitly ask for Postgres
+- Whether I already have a VibeStack API token
 
-Do not print my API token back to me. Do not commit it. Do not store it in the app repository.
+Do not ask for an app name yet. This skill should be reusable for many different apps. Only ask for an app name later when I explicitly deploy a specific app.
+
+If I provide an API token, do not print it back to me. Do not commit it. Do not store it in any app repository. If Claude Code has a secure local user-level secrets mechanism, use that; otherwise tell me that you will ask for the token at deployment time.
 
 Then install the VibeStack deployment skill for Claude Code:
 1. Fetch https://github.com/dankritz/vibestack
@@ -73,15 +75,10 @@ Then install the VibeStack deployment skill for Claude Code:
 3. If you are not sure where Claude Code skills are installed on this machine, inspect the local Claude Code configuration and ask me before writing files.
 4. Verify that the installed skill contains `SKILL.md`, `scripts/vibestack_deploy.py`, `references/api.md`, and `references/manifest.md`.
 
-After the skill is installed, prepare this app for VibeStack:
-1. Inspect the project.
-2. Create or fix `Dockerfile` and `vibestack.json` if needed.
-3. Make sure the app listens on `0.0.0.0` and the port in `vibestack.json`.
-4. Run the VibeStack deploy helper in dry-run mode first.
-5. If dry-run succeeds, deploy the app to my VibeStack server using the API token I provided.
-6. Poll the deployment until it succeeds or fails.
-7. If deployment succeeds, show me the live URL.
-8. If deployment fails, explain the problem in plain language, fix the app if you can, and retry once.
+After the skill is installed:
+1. Record the VibeStack hostname, hosted app base domain, default team, and access defaults in a user-level Claude Code note or configuration file, not inside any app repository.
+2. Explain how I can deploy any future app by opening that app in Claude Code and saying: "Deploy this app to VibeStack."
+3. Do not deploy the current app unless I explicitly ask you to.
 ```
 
 Administrators should give creators a team slug rather than a database ID when possible. The default bootstrap team is usually `platform-admins`, but production teams should be created per group or department.
