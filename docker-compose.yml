@@ -24,7 +24,7 @@ services:
       retries: 20
 
   traefik:
-    image: traefik:v3.0
+    image: ${TRAEFIK_IMAGE:-traefik:v3}
     command:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
