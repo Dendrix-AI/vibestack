@@ -120,9 +120,9 @@ function formatDate(value?: string | null): string {
   }).format(new Date(value));
 }
 
-function shortRef(value?: string): string {
-  if (!value) return '';
-  return value.length > 16 ? `(${value.slice(0, 7)})` : `(${value})`;
+function versionLabel(revision?: string, tag?: string, version?: string): string {
+  if (revision) return revision.slice(0, 7);
+  return tag ?? (version && version !== 'unknown' ? version : '-');
 }
 
 function statusTone(status: AppStatus | Deployment['status'] | string): string {
@@ -215,6 +215,30 @@ function App() {
     if (!selectedApp) return;
     void refreshDetail(selectedApp.id);
   }, [selectedApp?.id]);
+
+  useEffect(() => {
+    if (!user || !isAdmin(user) || systemUpdate?.state !== 'running') return;
+
+    let cancelled = false;
+    async function pollUpdate() {
+      try {
+        const nextUpdate = await api.getSystemUpdate();
+        if (!cancelled) {
+          setSystemUpdate(nextUpdate);
+        }
+      } catch {
+        // The API can briefly disappear while Docker replaces the service.
+      }
+    }
+
+    const firstPoll = window.setTimeout(() => void pollUpdate(), 1000);
+    const interval = window.setInterval(() => void pollUpdate(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(firstPoll);
+      window.clearInterval(interval);
+    };
+  }, [user, systemUpdate?.state, systemUpdate?.startedAt]);
 
   async function refreshWorkspace() {
     setLoading(true);
@@ -658,15 +682,13 @@ function AppDetail(props: Parameters<typeof AppsView>[0] & { app: AppSummary }) 
 
   function saveAccess(event: React.FormEvent) {
     event.preventDefault();
-    if (accessDraft.externalPasswordEnabled && !externalConfigured && accessDraft.externalPassword.length < 8) {
+    if (accessDraft.externalPasswordEnabled && (!externalConfigured || accessDraft.externalPassword) && accessDraft.externalPassword.length < 8) {
       window.alert('External password must be at least 8 characters.');
       return;
     }
     props.onAction('share', props.app, {
       loginAccessEnabled: accessDraft.loginAccessEnabled,
-      login_access_enabled: accessDraft.loginAccessEnabled,
       externalPasswordEnabled: accessDraft.externalPasswordEnabled,
-      external_password_enabled: accessDraft.externalPasswordEnabled,
       ...(accessDraft.externalPassword ? { externalPassword: accessDraft.externalPassword } : {})
     });
     setAccessDraft((current) => ({ ...current, externalPassword: '' }));
@@ -726,7 +748,7 @@ function AppDetail(props: Parameters<typeof AppsView>[0] & { app: AppSummary }) 
                     onChange={(event) => setAccessDraft({ ...accessDraft, externalPassword: event.target.value })}
                     placeholder={externalConfigured ? 'Leave blank to keep current password' : 'At least 8 characters'}
                     type={showExternalPassword ? 'text' : 'password'}
-                    minLength={externalConfigured ? undefined : 8}
+                    minLength={8}
                     required={accessDraft.externalPasswordEnabled && !externalConfigured}
                   />
                   <button type="button" onClick={() => setShowExternalPassword((current) => !current)} title={showExternalPassword ? 'Hide password' : 'Show password'}>
@@ -1020,6 +1042,8 @@ function SettingsView({
   const cloudflareConfigured = Boolean(cloudflare.configured ?? cloudflare.apiTokenConfigured ?? cloudflare.api_token_configured);
   const updateAvailable = Boolean(update?.updateAvailable);
   const updateRunning = update?.state === 'running';
+  const currentVersionLabel = versionLabel(update?.currentRevision, update?.currentTag, update?.currentVersion);
+  const latestVersionLabel = versionLabel(update?.latestRevision, update?.latestTag, update?.latestVersion);
 
   async function checkUpdate() {
     setError(undefined);
@@ -1071,11 +1095,12 @@ function SettingsView({
       <section className="panel">
         <PanelTitle icon={GitBranch} title="Version" />
         <dl className="version-list">
-          <div><dt>Current</dt><dd>{update?.currentVersion ?? '0.1.0'} {shortRef(update?.currentTag ?? update?.currentRevision)}</dd></div>
-          <div><dt>Latest</dt><dd>{update?.latestVersion ?? '-'} {shortRef(update?.latestTag ?? update?.latestRevision)}</dd></div>
+          <div><dt>Current</dt><dd>{currentVersionLabel}</dd></div>
+          <div><dt>Latest</dt><dd>{latestVersionLabel}</dd></div>
           <div><dt>Channel</dt><dd>{update?.channel ?? 'main'}</dd></div>
         </dl>
         <span className={`status-pill ${updateRunning ? 'busy' : updateAvailable ? 'good' : update?.sourceAvailable === false ? 'bad' : 'neutral'}`}>
+          {updateRunning ? <Loader2 className="spin" size={14} /> : null}
           {updateRunning ? 'updating' : updateAvailable ? 'update available' : update?.sourceAvailable === false ? 'unavailable' : 'up to date'}
         </span>
         {update?.message ? <p className="muted">{update.message}</p> : null}
@@ -1084,7 +1109,7 @@ function SettingsView({
             {updateBusy === 'check' ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} Check
           </button>
           <button type="button" className="button primary" onClick={() => void startUpdate()} disabled={!updateAvailable || Boolean(updateBusy) || updateRunning}>
-            {updateBusy === 'apply' ? <Loader2 className="spin" size={16} /> : <Download size={16} />} Update
+            {updateBusy === 'apply' || updateRunning ? <Loader2 className="spin" size={16} /> : <Download size={16} />} {updateRunning ? 'Updating' : 'Update'}
           </button>
         </div>
       </section>

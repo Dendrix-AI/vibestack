@@ -428,7 +428,7 @@ main() {
 
   cat <<SUMMARY
 
-VibeStack v0.1a is installed.
+VibeStack v0.2a is installed.
 
 Management URL: https://${VIBESTACK_HOST}
 Traefik URL:    https://${TRAEFIK_DASHBOARD_HOST}

@@ -43,7 +43,7 @@ Only ask for values that are missing or app-specific. For a normal deployment, d
 - Whether the app needs Postgres, using saved defaults when available.
 - Any required secrets.
 
-Never print API tokens, external passwords, or secret values.
+Never print API tokens or secret values. If external-password access is enabled and the helper generates a new app password, show that password to the user exactly once after deployment succeeds and tell them to save it.
 
 Suggested user-level config:
 
@@ -92,9 +92,11 @@ Read `references/manifest.md` for the manifest contract.
    - Dockerfile `EXPOSE`, if present, matches manifest port
 6. Package the project as a tarball, excluding local-only and sensitive files.
 7. Submit the tarball and deployment metadata to VibeStack.
-8. Poll every 30 seconds until status is terminal.
-9. Report the live URL on success.
-10. On failure, use the returned `agentHint`, error code, and details to fix the project and retry when appropriate.
+8. If external-password access is enabled and no password was supplied, let the helper generate one.
+9. Poll every 30 seconds until status is terminal.
+10. Report the live URL on success.
+11. If the helper generated an external app password, relay it to the user exactly once and explain that VibeStack stores only a hash.
+12. On failure, use the returned `agentHint`, error code, and details to fix the project and retry when appropriate.
 
 ## Helper Script
 

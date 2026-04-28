@@ -2,6 +2,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import importlib.util
 from pathlib import Path
 
 
@@ -11,6 +12,13 @@ FIXTURES = REPO_ROOT / "fixtures" / "sample-apps"
 
 
 class DeployHelperDryRunTest(unittest.TestCase):
+    def test_generated_external_password_is_safe_to_print_once(self) -> None:
+        module = load_helper_module()
+        password = module.generate_external_password()
+
+        self.assertEqual(len(password), 24)
+        self.assertRegex(password, r"^[A-Za-z0-9_-]+$")
+
     def test_dry_run_succeeds_for_valid_fixture(self) -> None:
         result = self.run_helper("node-basic")
 
@@ -102,6 +110,15 @@ class DeployHelperDryRunTest(unittest.TestCase):
             text=True,
             capture_output=True,
         )
+
+
+def load_helper_module():
+    spec = importlib.util.spec_from_file_location("vibestack_deploy", SCRIPT)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 if __name__ == "__main__":
