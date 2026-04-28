@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'echo "VibeStack installer failed near line ${LINENO}. See the message above for details." >&2' ERR
 
 REPO_URL="https://github.com/dankritz/vibestack.git"
 INSTALL_DIR="/opt/vibestack"
@@ -208,7 +209,14 @@ cloudflare_record_id() {
 }
 
 cloudflare_assert_success() {
-  python3 -c 'import json, sys; payload=json.load(sys.stdin); sys.exit(0 if payload.get("success") is True else 1)'
+  python3 -c 'import json, sys
+payload=json.load(sys.stdin)
+if payload.get("success") is True:
+    sys.exit(0)
+errors=payload.get("errors") or []
+message="; ".join(str(error.get("message", error)) for error in errors) or "unknown Cloudflare API error"
+print(message, file=sys.stderr)
+sys.exit(1)'
 }
 
 cloudflare_get_record() {
@@ -242,8 +250,10 @@ upsert_cloudflare_a_record() {
   response="$(cloudflare_get_record "$name")"
   record_id="$(printf '%s' "$response" | cloudflare_record_id)"
   if [[ -n "$record_id" ]]; then
+    echo "Updating Cloudflare A record ${name} -> ${ip}."
     cloudflare_write_record PUT "/dns_records/${record_id}" "$name" "$ip"
   else
+    echo "Creating Cloudflare A record ${name} -> ${ip}."
     cloudflare_write_record POST "/dns_records" "$name" "$ip"
   fi
 }
@@ -256,28 +266,31 @@ ensure_cloudflare_dns() {
   upsert_cloudflare_a_record "*.${BASE_DOMAIN}" "$ip"
 }
 
-check_dns() {
+wait_for_dns() {
   if [[ "$SKIP_DNS_CHECK" -eq 1 ]]; then
     return
   fi
   local ip="$1"
-  local deadline resolved
+  local deadline resolved ok=0
   for host in "$VIBESTACK_HOST" "$TRAEFIK_DASHBOARD_HOST"; do
     deadline=$((SECONDS + 120))
     while true; do
       resolved="$(getent ahostsv4 "$host" | awk '{print $1}' | sort -u | tr '\n' ' ')"
       if [[ " $resolved " == *" $ip "* ]]; then
+        echo "DNS resolved ${host} -> ${ip}."
         break
       fi
       if [[ "$SECONDS" -ge "$deadline" ]]; then
-        echo "DNS check failed for ${host}. Expected an A record pointing to ${ip}; got: ${resolved:-none}" >&2
-        echo "Cloudflare records were written, but DNS has not propagated to this server yet." >&2
-        echo "Re-run with --skip-dns-check if you have verified public DNS separately." >&2
-        exit 1
+        echo "DNS has not propagated to this server for ${host} yet. Expected ${ip}; got: ${resolved:-none}" >&2
+        ok=1
+        break
       fi
       sleep 5
     done
   done
+  if [[ "$ok" -ne 0 ]]; then
+    echo "Continuing after writing Cloudflare records. Traefik will retry Let's Encrypt issuance as DNS propagates." >&2
+  fi
 }
 
 prepare_repo() {
@@ -386,7 +399,7 @@ main() {
     exit 1
   fi
   ensure_cloudflare_dns "$server_ip"
-  check_dns "$server_ip"
+  wait_for_dns "$server_ip"
   prepare_repo
   write_env
   start_stack
