@@ -76,9 +76,14 @@ Then install the VibeStack deployment skill for Claude Code:
 4. Verify that the installed skill contains `SKILL.md`, `scripts/vibestack_deploy.py`, `references/api.md`, and `references/manifest.md`.
 
 After the skill is installed:
-1. Record the VibeStack hostname, hosted app base domain, default team, and access defaults in a user-level Claude Code note or configuration file, not inside any app repository.
-2. Explain how I can deploy any future app by opening that app in Claude Code and saying: "Deploy this app to VibeStack."
-3. Do not deploy the current app unless I explicitly ask you to.
+1. Create `~/.config/vibestack/deploy.json` with my VibeStack hostname, hosted app base domain, default team, and access defaults. Use this shape:
+   `{"apiUrl":"https://vibestack.example.com","baseDomain":"apps.example.com","team":"team-slug","loginAccess":true,"externalPassword":false,"postgres":false}`
+2. If I provide an API token and there is no better secure secrets store, create `~/.config/vibestack/credentials.json` with this shape:
+   `{"token":"vstk_..."}`
+3. Set both files to user-readable only, for example mode `0600`.
+4. Do not write either file inside any app repository.
+5. Explain how I can deploy any future app by opening that app in Claude Code and saying: "Deploy this app to VibeStack."
+6. Do not deploy the current app unless I explicitly ask you to.
 ```
 
 Administrators should give creators a team slug rather than a database ID when possible. The default bootstrap team is usually `platform-admins`, but production teams should be created per group or department.

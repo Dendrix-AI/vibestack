@@ -41,6 +41,14 @@ EXCLUDE_FILES = {
 }
 
 TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
+CONFIG_PATHS = [
+    Path("~/.config/vibestack/deploy.json").expanduser(),
+    Path("~/.vibestack/deploy.json").expanduser(),
+]
+CREDENTIAL_PATHS = [
+    Path("~/.config/vibestack/credentials.json").expanduser(),
+    Path("~/.vibestack/credentials.json").expanduser(),
+]
 
 
 def parse_bool(value: str) -> bool:
@@ -50,6 +58,85 @@ def parse_bool(value: str) -> bool:
     if lowered in {"0", "false", "no", "n"}:
         return False
     raise argparse.ArgumentTypeError(f"expected boolean, got {value!r}")
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"INVALID_CONFIG: {path} is invalid JSON: {exc}") from exc
+    if not isinstance(value, dict):
+        raise SystemExit(f"INVALID_CONFIG: {path} must contain a JSON object")
+    return value
+
+
+def configured_path(explicit: str | None, env_name: str, defaults: list[Path]) -> list[Path]:
+    if explicit:
+        return [Path(explicit).expanduser()]
+    env_value = os.environ.get(env_name)
+    if env_value:
+        return [Path(env_value).expanduser()]
+    return defaults
+
+
+def first_string(source: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = source.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def first_bool(source: dict[str, Any], *keys: str) -> bool | None:
+    for key in keys:
+        value = source.get(key)
+        if isinstance(value, bool):
+            return value
+    return None
+
+
+def load_defaults(config_path: str | None, credentials_path: str | None) -> dict[str, Any]:
+    config: dict[str, Any] = {}
+    for path in configured_path(config_path, "VIBESTACK_CONFIG", CONFIG_PATHS):
+        config.update(read_json(path))
+
+    credentials: dict[str, Any] = {}
+    for path in configured_path(credentials_path, "VIBESTACK_CREDENTIALS", CREDENTIAL_PATHS):
+        credentials.update(read_json(path))
+
+    defaults: dict[str, Any] = {
+        "endpoint": os.environ.get("VIBESTACK_API_URL")
+        or os.environ.get("VIBESTACK_URL")
+        or first_string(config, "apiUrl", "api_url", "endpoint", "url"),
+        "team": os.environ.get("VIBESTACK_TEAM") or first_string(config, "team", "teamSlug", "team_slug"),
+        "token": os.environ.get("VIBESTACK_TOKEN") or first_string(credentials, "token", "apiToken", "api_token"),
+        "login_access": first_bool(config, "loginAccess", "login_access"),
+        "external_password": first_bool(config, "externalPassword", "external_password"),
+        "postgres": first_bool(config, "postgres", "postgresEnabled", "postgres_enabled"),
+    }
+
+    env_login_access = os.environ.get("VIBESTACK_LOGIN_ACCESS")
+    env_external_password = os.environ.get("VIBESTACK_EXTERNAL_PASSWORD")
+    env_postgres = os.environ.get("VIBESTACK_POSTGRES")
+    if env_login_access:
+        defaults["login_access"] = parse_bool(env_login_access)
+    if env_external_password:
+        defaults["external_password"] = parse_bool(env_external_password)
+    if env_postgres:
+        defaults["postgres"] = parse_bool(env_postgres)
+
+    return defaults
+
+
+def require_deploy_value(value: str | None, name: str, flag: str) -> str:
+    if value:
+        return value
+    raise SystemExit(
+        f"MISSING_CONFIG: {name} is required. Pass {flag}, set the matching VIBESTACK_* environment variable, "
+        "or configure ~/.config/vibestack/deploy.json and ~/.config/vibestack/credentials.json."
+    )
 
 
 def load_manifest(source: Path) -> dict[str, Any]:
@@ -195,6 +282,20 @@ def http_json(
 
 
 def deploy(args: argparse.Namespace) -> None:
+    defaults = load_defaults(args.config, args.credentials)
+    args.endpoint = args.endpoint or defaults.get("endpoint")
+    args.team = args.team or defaults.get("team")
+    args.token = args.token or defaults.get("token")
+    if args.login_access is None:
+        args.login_access = defaults.get("login_access")
+    if args.external_password is None:
+        args.external_password = defaults.get("external_password")
+    if args.postgres is None:
+        args.postgres = defaults.get("postgres")
+    args.login_access = True if args.login_access is None else args.login_access
+    args.external_password = False if args.external_password is None else args.external_password
+    args.postgres = False if args.postgres is None else args.postgres
+
     source = Path(args.source).resolve()
     if not source.exists() or not source.is_dir():
         raise SystemExit(f"source directory does not exist: {source}")
@@ -209,6 +310,10 @@ def deploy(args: argparse.Namespace) -> None:
             return
         finally:
             tarball.unlink(missing_ok=True)
+
+    args.endpoint = require_deploy_value(args.endpoint, "VibeStack API URL", "--api-url")
+    args.team = require_deploy_value(args.team, "VibeStack team", "--team")
+    args.token = require_deploy_value(args.token, "VibeStack API token", "--token")
 
     secrets: dict[str, str] = {}
     for item in args.secret:
@@ -286,16 +391,18 @@ def deploy(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Deploy a project to VibeStack")
-    parser.add_argument("--api-url", dest="endpoint", required=True, help="VibeStack base URL")
-    parser.add_argument("--token", required=True, help="VibeStack personal API token")
-    parser.add_argument("--team", required=True, help="team ID or slug")
+    parser.add_argument("--api-url", dest="endpoint", help="VibeStack base URL")
+    parser.add_argument("--token", help="VibeStack personal API token")
+    parser.add_argument("--team", help="team ID or slug")
+    parser.add_argument("--config", help="path to VibeStack deploy config JSON")
+    parser.add_argument("--credentials", help="path to VibeStack credentials JSON")
     parser.add_argument("--app", help="app name; defaults to vibestack.json name")
     parser.add_argument("--app-id", help="existing app ID for update deployments")
     parser.add_argument("--source", default=".", help="project root")
-    parser.add_argument("--login-access", type=parse_bool, default=True)
-    parser.add_argument("--external-password", type=parse_bool, default=False)
+    parser.add_argument("--login-access", type=parse_bool)
+    parser.add_argument("--external-password", type=parse_bool)
     parser.add_argument("--external-password-value")
-    parser.add_argument("--postgres", type=parse_bool, default=False)
+    parser.add_argument("--postgres", type=parse_bool)
     parser.add_argument("--secret", action="append", default=[], help="secret as KEY=VALUE")
     parser.add_argument("--poll-interval", type=int, default=30)
     parser.add_argument("--timeout", type=int, default=1800)

@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,6 +17,52 @@ class DeployHelperDryRunTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Dry run succeeded", result.stdout)
         self.assertIn("Manifest app=node-basic port=3000 health=/", result.stdout)
+
+    def test_dry_run_does_not_require_server_config(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--source",
+                str(FIXTURES / "node-basic"),
+                "--dry-run",
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Dry run succeeded", result.stdout)
+
+    def test_config_file_can_provide_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "deploy.json"
+            credentials = Path(tmp) / "credentials.json"
+            config.write_text(
+                '{"apiUrl":"https://vibestack.local.test","team":"test-team","loginAccess":true}',
+                encoding="utf-8",
+            )
+            credentials.write_text('{"token":"test-token"}', encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--config",
+                    str(config),
+                    "--credentials",
+                    str(credentials),
+                    "--source",
+                    str(FIXTURES / "node-basic"),
+                    "--dry-run",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Dry run succeeded", result.stdout)
 
     def test_dry_run_fails_without_dockerfile(self) -> None:
         result = self.run_helper("missing-dockerfile")

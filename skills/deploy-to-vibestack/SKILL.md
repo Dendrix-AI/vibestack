@@ -13,21 +13,60 @@ Creators should not be exposed to Git, Docker, Traefik, Cloudflare, or build-sys
 
 ## Required Inputs
 
-Before deploying, determine:
+Before deploying, load saved defaults. Check these sources before asking the user:
+
+- Environment variables:
+  - `VIBESTACK_API_URL` or `VIBESTACK_URL`
+  - `VIBESTACK_TEAM`
+  - `VIBESTACK_TOKEN`
+  - `VIBESTACK_LOGIN_ACCESS`
+  - `VIBESTACK_EXTERNAL_PASSWORD`
+  - `VIBESTACK_POSTGRES`
+- User config files:
+  - `~/.config/vibestack/deploy.json`
+  - `~/.vibestack/deploy.json`
+- User credential files:
+  - `~/.config/vibestack/credentials.json`
+  - `~/.vibestack/credentials.json`
+
+Only ask for values that are missing or app-specific. For a normal deployment, determine:
 
 - VibeStack API base URL.
 - Personal API token.
 - Team ID or team slug. Use the user's default team if the server supports it and the user does not specify one.
-- App name.
+- App name. Infer it from `vibestack.json`, `package.json`, or the project directory when possible; ask only if ambiguous.
 - Whether this is a new app, update, or rollback.
-- Access mode:
+- Access mode, using saved defaults when available:
   - logged-in VibeStack users
   - external app password
   - both
-- Whether the app needs Postgres.
+- Whether the app needs Postgres, using saved defaults when available.
 - Any required secrets.
 
 Never print API tokens, external passwords, or secret values.
+
+Suggested user-level config:
+
+```json
+{
+  "apiUrl": "https://vibestack.example.com",
+  "baseDomain": "apps.example.com",
+  "team": "platform-admins",
+  "loginAccess": true,
+  "externalPassword": false,
+  "postgres": false
+}
+```
+
+Suggested user-level credentials:
+
+```json
+{
+  "token": "vstk_..."
+}
+```
+
+Credentials files must be user-readable only, for example mode `0600`. Never write these files inside an app repository.
 
 ## Project Requirements
 
@@ -63,17 +102,11 @@ Use `scripts/vibestack_deploy.py` when possible:
 
 ```bash
 python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
-  --api-url https://vibestack.example.com \
-  --token "$VIBESTACK_TOKEN" \
-  --team my-team \
   --app sales-dashboard \
-  --source . \
-  --login-access true \
-  --external-password false \
-  --postgres false
+  --source .
 ```
 
-The script performs local validation, creates a tarball, submits it using the VibeStack deployment API, and polls status. If the VibeStack implementation changes, read `references/api.md` and adjust the request shape.
+The script loads defaults from environment variables and user-level config, performs local validation, creates a tarball, submits it using the VibeStack deployment API, and polls status. If the VibeStack implementation changes, read `references/api.md` and adjust the request shape.
 
 For validation without a live server, add `--dry-run`.
 
