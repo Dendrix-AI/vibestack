@@ -19,6 +19,10 @@ export async function createSession(db: Db, userId: string): Promise<string> {
 }
 
 export function setSessionCookie(reply: FastifyReply, token: string, secure: boolean, domain?: string): void {
+  if (domain) {
+    clearHostOnlySessionCookie(reply, secure);
+  }
+
   reply.setCookie(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -31,12 +35,26 @@ export function setSessionCookie(reply: FastifyReply, token: string, secure: boo
 }
 
 export function clearSessionCookie(reply: FastifyReply, secure: boolean, domain?: string): void {
+  if (domain) {
+    clearHostOnlySessionCookie(reply, secure);
+  }
+
   reply.clearCookie(SESSION_COOKIE, {
     httpOnly: true,
     sameSite: 'lax',
     secure,
     signed: true,
     domain,
+    path: '/'
+  });
+}
+
+function clearHostOnlySessionCookie(reply: FastifyReply, secure: boolean): void {
+  reply.clearCookie(SESSION_COOKIE, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure,
+    signed: true,
     path: '/'
   });
 }
