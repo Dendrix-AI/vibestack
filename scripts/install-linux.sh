@@ -150,7 +150,7 @@ random_secret() {
 install_packages() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
-  apt-get install -y ca-certificates curl git gnupg openssl apache2-utils iproute2 lsb-release rsync
+  apt-get install -y ca-certificates curl git gnupg openssl apache2-utils iproute2 lsb-release python3 rsync
 }
 
 install_docker() {
@@ -199,23 +199,84 @@ public_ip() {
   curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true
 }
 
+json_string() {
+  python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$1"
+}
+
+cloudflare_record_id() {
+  python3 -c 'import json, sys; payload=json.load(sys.stdin); records=payload.get("result") or []; print((records[0] or {}).get("id", "") if records else "")'
+}
+
+cloudflare_assert_success() {
+  python3 -c 'import json, sys; payload=json.load(sys.stdin); sys.exit(0 if payload.get("success") is True else 1)'
+}
+
+cloudflare_get_record() {
+  local name="$1"
+  curl -fsS --get --globoff \
+    "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records" \
+    -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+    --data-urlencode "type=A" \
+    --data-urlencode "name=${name}" \
+    --data-urlencode "per_page=1"
+}
+
+cloudflare_write_record() {
+  local method="$1"
+  local path="$2"
+  local name="$3"
+  local ip="$4"
+  local body
+  body="$(printf '{"type":"A","name":%s,"content":%s,"ttl":1,"proxied":false}' "$(json_string "$name")" "$(json_string "$ip")")"
+  curl -fsS -X "$method" \
+    "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}${path}" \
+    -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    --data "$body" | cloudflare_assert_success
+}
+
+upsert_cloudflare_a_record() {
+  local name="$1"
+  local ip="$2"
+  local response record_id
+  response="$(cloudflare_get_record "$name")"
+  record_id="$(printf '%s' "$response" | cloudflare_record_id)"
+  if [[ -n "$record_id" ]]; then
+    cloudflare_write_record PUT "/dns_records/${record_id}" "$name" "$ip"
+  else
+    cloudflare_write_record POST "/dns_records" "$name" "$ip"
+  fi
+}
+
+ensure_cloudflare_dns() {
+  local ip="$1"
+  echo "Configuring Cloudflare DNS records for ${ip}."
+  upsert_cloudflare_a_record "$VIBESTACK_HOST" "$ip"
+  upsert_cloudflare_a_record "$TRAEFIK_DASHBOARD_HOST" "$ip"
+  upsert_cloudflare_a_record "*.${BASE_DOMAIN}" "$ip"
+}
+
 check_dns() {
   if [[ "$SKIP_DNS_CHECK" -eq 1 ]]; then
     return
   fi
-  local ip resolved
-  ip="$(public_ip)"
-  if [[ -z "$ip" ]]; then
-    echo "Could not determine this server's public IP. Re-run with --skip-dns-check after verifying DNS." >&2
-    exit 1
-  fi
+  local ip="$1"
+  local deadline resolved
   for host in "$VIBESTACK_HOST" "$TRAEFIK_DASHBOARD_HOST"; do
-    resolved="$(getent ahostsv4 "$host" | awk '{print $1}' | sort -u | tr '\n' ' ')"
-    if [[ -z "$resolved" || " $resolved " != *" $ip "* ]]; then
-      echo "DNS check failed for ${host}. Expected an A record pointing to ${ip}; got: ${resolved:-none}" >&2
-      echo "Create DNS records first, or re-run with --skip-dns-check if DNS is intentionally managed later." >&2
-      exit 1
-    fi
+    deadline=$((SECONDS + 120))
+    while true; do
+      resolved="$(getent ahostsv4 "$host" | awk '{print $1}' | sort -u | tr '\n' ' ')"
+      if [[ " $resolved " == *" $ip "* ]]; then
+        break
+      fi
+      if [[ "$SECONDS" -ge "$deadline" ]]; then
+        echo "DNS check failed for ${host}. Expected an A record pointing to ${ip}; got: ${resolved:-none}" >&2
+        echo "Cloudflare records were written, but DNS has not propagated to this server yet." >&2
+        echo "Re-run with --skip-dns-check if you have verified public DNS separately." >&2
+        exit 1
+      fi
+      sleep 5
+    done
   done
 }
 
@@ -319,7 +380,13 @@ main() {
   validate_inputs
   install_docker
   check_ports
-  check_dns
+  server_ip="$(public_ip)"
+  if [[ -z "$server_ip" ]]; then
+    echo "Could not determine this server's public IP." >&2
+    exit 1
+  fi
+  ensure_cloudflare_dns "$server_ip"
+  check_dns "$server_ip"
   prepare_repo
   write_env
   start_stack
