@@ -18,23 +18,25 @@ export async function createSession(db: Db, userId: string): Promise<string> {
   return token;
 }
 
-export function setSessionCookie(reply: FastifyReply, token: string, secure: boolean): void {
+export function setSessionCookie(reply: FastifyReply, token: string, secure: boolean, domain?: string): void {
   reply.setCookie(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
     secure,
     signed: true,
+    domain,
     path: '/',
     maxAge: SESSION_DAYS * 24 * 60 * 60
   });
 }
 
-export function clearSessionCookie(reply: FastifyReply, secure: boolean): void {
+export function clearSessionCookie(reply: FastifyReply, secure: boolean, domain?: string): void {
   reply.clearCookie(SESSION_COOKIE, {
     httpOnly: true,
     sameSite: 'lax',
     secure,
     signed: true,
+    domain,
     path: '/'
   });
 }

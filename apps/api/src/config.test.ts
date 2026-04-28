@@ -12,6 +12,7 @@ describe('API configuration parsing', () => {
         POSTGRES_DB: 'vibestack_test',
         PORT: '4000',
         VIBESTACK_PUBLIC_URL: 'https://vibestack.local.test',
+        VIBESTACK_COOKIE_DOMAIN: 'local.test',
         RUNTIME_DRIVER: 'docker',
         TRAEFIK_ENTRYPOINT: 'websecure',
         TRAEFIK_CERT_RESOLVER: 'letsencrypt',
@@ -22,6 +23,7 @@ describe('API configuration parsing', () => {
     ).toMatchObject({
       port: 4000,
       publicUrl: 'https://vibestack.local.test',
+      cookieDomain: 'local.test',
       databaseUrl: 'postgres://vibestack_user:secret@postgres:5433/vibestack_test',
       runtimeDriver: 'docker',
       traefikEntrypoint: 'websecure',

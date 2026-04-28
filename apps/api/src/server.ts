@@ -349,7 +349,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       throw new HttpError({ code: 'INVALID_CREDENTIALS', message: 'Invalid email or password.', statusCode: 401 });
     }
     const token = await createSession(db, user.id);
-    setSessionCookie(reply, token, secureCookies(config));
+    setSessionCookie(reply, token, secureCookies(config), config.cookieDomain);
     await writeAuditLog(db, {
       actorUserId: user.id,
       actorType: 'user',
@@ -369,7 +369,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
         await db.query('DELETE FROM sessions WHERE token_hash = $1', [sha256(unsigned.value)]);
       }
     }
-    clearSessionCookie(reply, secureCookies(config));
+    clearSessionCookie(reply, secureCookies(config), config.cookieDomain);
     return { ok: true };
   });
 
@@ -474,6 +474,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       sameSite: 'lax',
       secure: secureCookies(config),
       signed: true,
+      domain: config.cookieDomain,
       path: '/',
       maxAge: 30 * 24 * 60 * 60
     });

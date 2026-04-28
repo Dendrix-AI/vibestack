@@ -329,6 +329,18 @@ node_name() {
   sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -n 1
 }
 
+derive_cookie_domain() {
+  if [[ "$VIBESTACK_HOST" == "$BASE_DOMAIN" || "$VIBESTACK_HOST" == *".${BASE_DOMAIN}" ]]; then
+    printf '%s' "$BASE_DOMAIN"
+    return
+  fi
+
+  local parent_domain="${BASE_DOMAIN#*.}"
+  if [[ "$parent_domain" != "$BASE_DOMAIN" && ( "$VIBESTACK_HOST" == "$parent_domain" || "$VIBESTACK_HOST" == *".${parent_domain}" ) ]]; then
+    printf '%s' "$parent_domain"
+  fi
+}
+
 write_env() {
   mkdir -p "${INSTALL_DIR}/secrets"
   chmod 700 "${INSTALL_DIR}/secrets"
@@ -339,12 +351,15 @@ write_env() {
   postgres_password="$(random_secret)"
   session_secret="$(random_secret)"
   secret_key="$(random_secret)"
+  local cookie_domain
+  cookie_domain="$(derive_cookie_domain)"
 
   cat >"${INSTALL_DIR}/.env" <<ENV
 NODE_ENV=production
 VIBESTACK_HOST=${VIBESTACK_HOST}
 VIBESTACK_PUBLIC_URL=https://${VIBESTACK_HOST}
 VIBESTACK_BASE_DOMAIN=${BASE_DOMAIN}
+VIBESTACK_COOKIE_DOMAIN=${cookie_domain}
 VIBESTACK_DATA_DIR=/var/lib/vibestack
 VIBESTACK_SESSION_SECRET=${session_secret}
 VIBESTACK_SECRET_KEY=${secret_key}
