@@ -1,0 +1,32 @@
+{
+  "name": "vibestack",
+  "version": "0.1.0",
+  "description": "Self-hosted platform for deploying AI-generated web applications.",
+  "private": true,
+  "author": "Dan Kritzinger",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @vibestack/api",
+    "dev:web": "npm run dev --workspace @vibestack/web",
+    "build": "npm run build --workspace @vibestack/shared && npm run build --workspace @vibestack/api && npm run build --workspace @vibestack/web --if-present",
+    "typecheck": "npm run typecheck --workspace @vibestack/shared && npm run typecheck --workspace @vibestack/api && npm run typecheck --workspace @vibestack/web --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "db:migrate": "npm run db:migrate --workspace @vibestack/api",
+    "compose:up": "docker compose up --build",
+    "compose:down": "docker compose down",
+    "compose:reset": "docker compose down -v"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "eslint": "^9.2.0",
+    "prettier": "^3.2.5",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}

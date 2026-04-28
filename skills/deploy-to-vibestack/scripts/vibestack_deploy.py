@@ -1,0 +1,312 @@
+#!/usr/bin/env python3
+"""Package and deploy a web app to VibeStack.
+
+This script intentionally uses only Python standard library modules so it can run
+inside coding-agent environments without extra dependencies.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import mimetypes
+import os
+import re
+import ssl
+import sys
+import tarfile
+import tempfile
+import time
+import uuid
+from pathlib import Path
+from typing import Any
+from urllib import error, request
+
+
+EXCLUDE_DIRS = {
+    ".git",
+    "node_modules",
+    "dist",
+    "build",
+    ".next",
+    ".turbo",
+    ".cache",
+    "coverage",
+    "__pycache__",
+}
+
+EXCLUDE_FILES = {
+    ".DS_Store",
+    ".env",
+}
+
+TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
+
+
+def parse_bool(value: str) -> bool:
+    lowered = value.lower()
+    if lowered in {"1", "true", "yes", "y"}:
+        return True
+    if lowered in {"0", "false", "no", "n"}:
+        return False
+    raise argparse.ArgumentTypeError(f"expected boolean, got {value!r}")
+
+
+def load_manifest(source: Path) -> dict[str, Any]:
+    manifest_path = source / "vibestack.json"
+    if not manifest_path.exists():
+        raise SystemExit("MISSING_MANIFEST: vibestack.json is required at the project root")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"INVALID_MANIFEST: vibestack.json is invalid JSON: {exc}") from exc
+
+    required = {
+        "name": str,
+        "port": int,
+        "healthCheckPath": str,
+        "persistent": bool,
+    }
+    for key, expected_type in required.items():
+        if key not in manifest:
+            raise SystemExit(f"INVALID_MANIFEST: missing required field {key!r}")
+        if not isinstance(manifest[key], expected_type):
+            raise SystemExit(f"INVALID_MANIFEST: field {key!r} must be {expected_type.__name__}")
+
+    if manifest["port"] < 1 or manifest["port"] > 65535:
+        raise SystemExit("INVALID_MANIFEST: port must be between 1 and 65535")
+    if not manifest["healthCheckPath"].startswith("/"):
+        raise SystemExit("INVALID_MANIFEST: healthCheckPath must start with /")
+
+    return manifest
+
+
+def validate_dockerfile(source: Path, manifest: dict[str, Any]) -> None:
+    dockerfile = source / "Dockerfile"
+    if not dockerfile.exists():
+        raise SystemExit("MISSING_DOCKERFILE: Dockerfile is required at the project root")
+
+    text = dockerfile.read_text(encoding="utf-8", errors="replace")
+    if not text.strip():
+        raise SystemExit("INVALID_DOCKERFILE: Dockerfile is empty")
+
+    exposed_ports = set()
+    for match in re.finditer(r"(?im)^\s*EXPOSE\s+(.+)$", text):
+        for raw_port in match.group(1).split():
+            port = raw_port.split("/", 1)[0]
+            if port.isdigit():
+                exposed_ports.add(int(port))
+
+    manifest_port = int(manifest["port"])
+    if exposed_ports and manifest_port not in exposed_ports:
+        ports = ", ".join(str(port) for port in sorted(exposed_ports))
+        raise SystemExit(
+            f"PORT_MISMATCH: Dockerfile exposes {ports}, but vibestack.json port is {manifest_port}"
+        )
+
+
+def should_exclude(path: Path, root: Path) -> bool:
+    rel = path.relative_to(root)
+    parts = set(rel.parts)
+    if parts & EXCLUDE_DIRS:
+        return True
+    if path.name in EXCLUDE_FILES:
+        return True
+    if path.name.startswith(".env."):
+        return True
+    return False
+
+
+def make_tarball(source: Path) -> Path:
+    fd, tmp_name = tempfile.mkstemp(prefix="vibestack-", suffix=".tar.gz")
+    os.close(fd)
+    tar_path = Path(tmp_name)
+
+    with tarfile.open(tar_path, "w:gz") as tar:
+        for path in sorted(source.rglob("*")):
+            if should_exclude(path, source):
+                continue
+            arcname = path.relative_to(source)
+            tar.add(path, arcname=str(arcname), recursive=False)
+
+    return tar_path
+
+
+def encode_multipart(fields: dict[str, str], files: dict[str, Path]) -> tuple[bytes, str]:
+    boundary = f"----vibestack-{uuid.uuid4().hex}"
+    chunks: list[bytes] = []
+
+    for name, value in fields.items():
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode(),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode(),
+                value.encode(),
+                b"\r\n",
+            ]
+        )
+
+    for name, path in files.items():
+        filename = path.name
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode(),
+                f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode(),
+                f"Content-Type: {content_type}\r\n\r\n".encode(),
+                path.read_bytes(),
+                b"\r\n",
+            ]
+        )
+
+    chunks.append(f"--{boundary}--\r\n".encode())
+    return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
+
+
+def http_json(
+    method: str,
+    url: str,
+    token: str,
+    body: bytes | None = None,
+    content_type: str | None = None,
+    insecure_tls: bool = False,
+) -> dict[str, Any]:
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
+    if content_type:
+        headers["Content-Type"] = content_type
+
+    req = request.Request(url, data=body, headers=headers, method=method)
+    context = ssl._create_unverified_context() if insecure_tls else None
+
+    try:
+        with request.urlopen(req, context=context, timeout=60) as response:
+            data = response.read()
+            return json.loads(data.decode("utf-8")) if data else {}
+    except error.HTTPError as exc:
+        data = exc.read().decode("utf-8", errors="replace")
+        try:
+            payload = json.loads(data)
+        except json.JSONDecodeError:
+            payload = {"error": {"code": f"HTTP_{exc.code}", "message": data}}
+        raise RuntimeError(json.dumps(payload, indent=2)) from exc
+
+
+def deploy(args: argparse.Namespace) -> None:
+    source = Path(args.source).resolve()
+    if not source.exists() or not source.is_dir():
+        raise SystemExit(f"source directory does not exist: {source}")
+
+    manifest = load_manifest(source)
+    validate_dockerfile(source, manifest)
+    tarball = make_tarball(source)
+    if args.dry_run:
+        try:
+            print(f"Dry run succeeded: packaged {source} into {tarball.stat().st_size} bytes")
+            print(f"Manifest app={manifest['name']} port={manifest['port']} health={manifest['healthCheckPath']}")
+            return
+        finally:
+            tarball.unlink(missing_ok=True)
+
+    secrets: dict[str, str] = {}
+    for item in args.secret:
+        if "=" not in item:
+            raise SystemExit(f"secret must be KEY=VALUE, got {item!r}")
+        key, value = item.split("=", 1)
+        secrets[key] = value
+
+    metadata = {
+        "team": args.team,
+        "appName": args.app or manifest["name"],
+        "access": {
+            "loginRequired": args.login_access,
+            "externalPasswordEnabled": args.external_password,
+            "externalPassword": args.external_password_value,
+        },
+        "postgres": {
+            "enabled": args.postgres,
+        },
+        "secrets": secrets,
+    }
+
+    endpoint = args.endpoint.rstrip("/")
+    if args.app_id:
+        url = f"{endpoint}/api/v1/apps/{args.app_id}/deployments"
+    else:
+        url = f"{endpoint}/api/v1/apps/deploy"
+
+    body, content_type = encode_multipart(
+        {"metadata": json.dumps(metadata)},
+        {"source": tarball},
+    )
+
+    try:
+        created = http_json(
+            "POST",
+            url,
+            args.token,
+            body=body,
+            content_type=content_type,
+            insecure_tls=args.insecure_tls,
+        )
+    finally:
+        tarball.unlink(missing_ok=True)
+
+    deployment_id = created.get("deploymentId")
+    if not deployment_id:
+        raise SystemExit(f"deployment response did not include deploymentId: {created}")
+
+    print(f"Deployment started: {deployment_id}")
+    poll_url = f"{endpoint}/api/v1/deployments/{deployment_id}"
+    deadline = time.time() + args.timeout
+
+    while time.time() < deadline:
+        status = http_json("GET", poll_url, args.token, insecure_tls=args.insecure_tls)
+        deployment_status = (
+            status.get("deploymentStatus")
+            or status.get("status")
+            or (status.get("deployment") or {}).get("status")
+        )
+        print(f"Deployment status: {deployment_status}")
+
+        if deployment_status in TERMINAL_STATUSES:
+            if deployment_status == "succeeded":
+                print(f"Deployment succeeded: {status.get('url')}")
+                return
+            print("Deployment failed:")
+            print(json.dumps(status.get("error") or status, indent=2))
+            raise SystemExit(1)
+
+        time.sleep(args.poll_interval)
+
+    raise SystemExit(f"deployment did not finish within {args.timeout} seconds")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Deploy a project to VibeStack")
+    parser.add_argument("--api-url", dest="endpoint", required=True, help="VibeStack base URL")
+    parser.add_argument("--token", required=True, help="VibeStack personal API token")
+    parser.add_argument("--team", required=True, help="team ID or slug")
+    parser.add_argument("--app", help="app name; defaults to vibestack.json name")
+    parser.add_argument("--app-id", help="existing app ID for update deployments")
+    parser.add_argument("--source", default=".", help="project root")
+    parser.add_argument("--login-access", type=parse_bool, default=True)
+    parser.add_argument("--external-password", type=parse_bool, default=False)
+    parser.add_argument("--external-password-value")
+    parser.add_argument("--postgres", type=parse_bool, default=False)
+    parser.add_argument("--secret", action="append", default=[], help="secret as KEY=VALUE")
+    parser.add_argument("--poll-interval", type=int, default=30)
+    parser.add_argument("--timeout", type=int, default=1800)
+    parser.add_argument("--insecure-tls", action="store_true")
+    parser.add_argument("--dry-run", action="store_true", help="validate and package without calling the API")
+    return parser
+
+
+if __name__ == "__main__":
+    try:
+        deploy(build_parser().parse_args())
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1) from exc

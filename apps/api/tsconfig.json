@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*.ts", "src/**/*.test.ts"],
+  "exclude": ["src/routes.ts", "src/queue.ts", "src/deployment/**/*.ts"]
+}

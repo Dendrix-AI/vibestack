@@ -1,0 +1,7 @@
+{
+  "name": "postgres-basic",
+  "port": 3000,
+  "healthCheckPath": "/",
+  "persistent": true,
+  "postgres": true
+}

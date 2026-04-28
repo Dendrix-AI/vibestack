@@ -1,0 +1,6 @@
+{
+  "name": "Invalid App",
+  "port": 70000,
+  "healthCheckPath": "health",
+  "persistent": false
+}

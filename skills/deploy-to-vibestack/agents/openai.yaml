@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy to VibeStack"
+  short_description: "Package and deploy AI-generated web apps to VibeStack."
+  default_prompt: "Deploy this web app to VibeStack."

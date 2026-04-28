@@ -1,0 +1,46 @@
+# Git and local metadata
+.git/
+.gitignore
+.dockerignore
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.next/
+.turbo/
+.cache/
+coverage/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+secrets/
+
+# Local VibeStack runtime data
+.vibestack-data/
+
+# Private planning and implementation notes
+IMPLEMENTATION_LOG.md
+docs/plan.md
+docs/prd.md
+docs/trd.md
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python helper artifacts
+__pycache__/
+*.py[cod]
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

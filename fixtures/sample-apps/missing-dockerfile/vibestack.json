@@ -1,0 +1,6 @@
+{
+  "name": "missing-dockerfile",
+  "port": 3000,
+  "healthCheckPath": "/",
+  "persistent": false
+}

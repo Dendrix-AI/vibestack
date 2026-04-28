@@ -1,0 +1,170 @@
+name: vibestack
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vibestack
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: vibestack
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vibestack"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  traefik:
+    image: traefik:v3.0
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.web.http.redirections.entrypoint.permanent=true
+      - --entrypoints.websecure.address=:443
+      - --api.dashboard=true
+      - --certificatesresolvers.letsencrypt.acme.email=${LETSENCRYPT_EMAIL:?LETSENCRYPT_EMAIL is required}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+    ports:
+      - "80:80"
+      - "443:443"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.vibestack-traefik.rule=Host(`${TRAEFIK_DASHBOARD_HOST:?TRAEFIK_DASHBOARD_HOST is required}`)
+      - traefik.http.routers.vibestack-traefik.entrypoints=websecure
+      - traefik.http.routers.vibestack-traefik.tls=true
+      - traefik.http.routers.vibestack-traefik.tls.certresolver=letsencrypt
+      - traefik.http.routers.vibestack-traefik.service=api@internal
+      - traefik.http.routers.vibestack-traefik.middlewares=vibestack-traefik-auth
+      - traefik.http.middlewares.vibestack-traefik-auth.basicauth.usersfile=/run/secrets/traefik_dashboard_users
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+      - ./secrets/traefik_dashboard_users:/run/secrets/traefik_dashboard_users:ro
+    networks:
+      - default
+      - vibestack_apps
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      VIBESTACK_PUBLIC_URL: ${VIBESTACK_PUBLIC_URL:?VIBESTACK_PUBLIC_URL is required}
+      VIBESTACK_BASE_DOMAIN: ${VIBESTACK_BASE_DOMAIN:?VIBESTACK_BASE_DOMAIN is required}
+      VIBESTACK_DATA_DIR: /var/lib/vibestack
+      VIBESTACK_SESSION_SECRET: ${VIBESTACK_SESSION_SECRET:?VIBESTACK_SESSION_SECRET is required}
+      VIBESTACK_SECRET_KEY: ${VIBESTACK_SECRET_KEY:?VIBESTACK_SECRET_KEY is required}
+      DATABASE_URL: postgres://vibestack:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/vibestack
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: vibestack
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: vibestack
+      REDIS_URL: redis://redis:6379
+      RUNTIME_DRIVER: docker
+      TRAEFIK_NETWORK: vibestack_apps
+      TRAEFIK_ENTRYPOINT: websecure
+      TRAEFIK_CERT_RESOLVER: letsencrypt
+      FIRST_ADMIN_EMAIL: ${FIRST_ADMIN_EMAIL:?FIRST_ADMIN_EMAIL is required}
+      FIRST_ADMIN_PASSWORD: ${FIRST_ADMIN_PASSWORD:?FIRST_ADMIN_PASSWORD is required}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=vibestack_default
+      - traefik.http.routers.vibestack-api.rule=Host(`${VIBESTACK_HOST:?VIBESTACK_HOST is required}`) && PathPrefix(`/api`)
+      - traefik.http.routers.vibestack-api.entrypoints=websecure
+      - traefik.http.routers.vibestack-api.tls=true
+      - traefik.http.routers.vibestack-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.vibestack-api.priority=100
+      - traefik.http.services.vibestack-api.loadbalancer.server.port=3000
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - vibestack_data:/var/lib/vibestack
+    networks:
+      - default
+      - vibestack_apps
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["node", "dist/worker.js"]
+    environment:
+      NODE_ENV: production
+      VIBESTACK_PUBLIC_URL: ${VIBESTACK_PUBLIC_URL:?VIBESTACK_PUBLIC_URL is required}
+      VIBESTACK_BASE_DOMAIN: ${VIBESTACK_BASE_DOMAIN:?VIBESTACK_BASE_DOMAIN is required}
+      VIBESTACK_DATA_DIR: /var/lib/vibestack
+      VIBESTACK_SESSION_SECRET: ${VIBESTACK_SESSION_SECRET:?VIBESTACK_SESSION_SECRET is required}
+      VIBESTACK_SECRET_KEY: ${VIBESTACK_SECRET_KEY:?VIBESTACK_SECRET_KEY is required}
+      DATABASE_URL: postgres://vibestack:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/vibestack
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: vibestack
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: vibestack
+      REDIS_URL: redis://redis:6379
+      RUNTIME_DRIVER: docker
+      TRAEFIK_NETWORK: vibestack_apps
+      TRAEFIK_ENTRYPOINT: websecure
+      TRAEFIK_CERT_RESOLVER: letsencrypt
+      FIRST_ADMIN_EMAIL: ${FIRST_ADMIN_EMAIL:?FIRST_ADMIN_EMAIL is required}
+      FIRST_ADMIN_PASSWORD: ${FIRST_ADMIN_PASSWORD:?FIRST_ADMIN_PASSWORD is required}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - vibestack_data:/var/lib/vibestack
+    networks:
+      - default
+      - vibestack_apps
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=vibestack_default
+      - traefik.http.routers.vibestack-web.rule=Host(`${VIBESTACK_HOST:?VIBESTACK_HOST is required}`)
+      - traefik.http.routers.vibestack-web.entrypoints=websecure
+      - traefik.http.routers.vibestack-web.tls=true
+      - traefik.http.routers.vibestack-web.tls.certresolver=letsencrypt
+      - traefik.http.routers.vibestack-web.priority=10
+      - traefik.http.services.vibestack-web.loadbalancer.server.port=80
+    networks:
+      - default
+
+volumes:
+  postgres_data:
+  vibestack_data:
+  letsencrypt:
+
+networks:
+  vibestack_apps:
+    name: vibestack_apps
