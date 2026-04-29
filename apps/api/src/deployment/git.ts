@@ -13,12 +13,18 @@ export async function commitSource(config: Config, appId: string, sourceDir: str
     await fs.access(repoPath);
   } catch {
     await exec('git', ['init', '--bare', repoPath]);
+    await exec('git', ['--git-dir', repoPath, 'symbolic-ref', 'HEAD', 'refs/heads/main']);
   }
 
   const workTree = path.join(config.dataDir, 'git-worktrees', `${appId}-${Date.now()}`);
   await fs.rm(workTree, { recursive: true, force: true });
   await fs.mkdir(path.dirname(workTree), { recursive: true });
-  await exec('git', ['clone', repoPath, workTree]);
+  await exec('git', ['clone', '--branch', 'main', repoPath, workTree]).catch(async () => {
+    await fs.rm(workTree, { recursive: true, force: true });
+    await exec('git', ['clone', repoPath, workTree]);
+    await exec('git', ['-C', workTree, 'checkout', '--orphan', 'main']);
+  });
+  await emptyWorkTree(workTree);
   await copyDir(sourceDir, workTree);
   await exec('git', ['-C', workTree, 'add', '.']);
 
@@ -33,9 +39,17 @@ export async function commitSource(config: Config, appId: string, sourceDir: str
   await exec('git', ['-C', workTree, 'config', 'user.name', 'VibeStack']);
   await exec('git', ['-C', workTree, 'commit', '-m', message]);
   await exec('git', ['-C', workTree, 'push', 'origin', 'HEAD:main']);
+  await exec('git', ['--git-dir', repoPath, 'symbolic-ref', 'HEAD', 'refs/heads/main']);
   const sha = (await exec('git', ['-C', workTree, 'rev-parse', 'HEAD'])).stdout.trim();
   await fs.rm(workTree, { recursive: true, force: true });
   return sha;
+}
+
+async function emptyWorkTree(workTree: string): Promise<void> {
+  for (const entry of await fs.readdir(workTree, { withFileTypes: true })) {
+    if (entry.name === '.git') continue;
+    await fs.rm(path.join(workTree, entry.name), { recursive: true, force: true });
+  }
 }
 
 async function copyDir(source: string, destination: string): Promise<void> {

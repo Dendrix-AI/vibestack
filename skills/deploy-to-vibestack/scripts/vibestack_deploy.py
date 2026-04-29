@@ -52,6 +52,7 @@ CREDENTIAL_PATHS = [
     Path("~/.vibestack/credentials.json").expanduser(),
 ]
 EXTERNAL_PASSWORD_ALPHABET = string.ascii_letters + string.digits + "-_"
+UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
 def parse_bool(value: str) -> bool:
@@ -118,6 +119,7 @@ def load_defaults(config_path: str | None, credentials_path: str | None) -> dict
         or os.environ.get("VIBESTACK_URL")
         or first_string(config, "apiUrl", "api_url", "endpoint", "url"),
         "team": os.environ.get("VIBESTACK_TEAM") or first_string(config, "team", "teamSlug", "team_slug"),
+        "app_id": os.environ.get("VIBESTACK_APP_ID") or first_string(config, "appId", "app_id"),
         "token": os.environ.get("VIBESTACK_TOKEN") or first_string(credentials, "token", "apiToken", "api_token"),
         "login_access": first_bool(config, "loginAccess", "login_access"),
         "external_password": first_bool(config, "externalPassword", "external_password"),
@@ -288,10 +290,59 @@ def http_json(
         raise RuntimeError(json.dumps(payload, indent=2)) from exc
 
 
+def slugify(value: str) -> str:
+    return re.sub(r"(^-|-$)", "", re.sub(r"[^a-z0-9]+", "-", value.lower()))
+
+
+def resolve_team_id(endpoint: str, token: str, team: str | None, insecure_tls: bool) -> str | None:
+    if not team or UUID_RE.match(team):
+        return team
+
+    payload = http_json("GET", f"{endpoint}/api/v1/teams", token, insecure_tls=insecure_tls)
+    for item in payload.get("teams", []):
+        if item.get("id") == team or item.get("slug") == team:
+            return item.get("id")
+    return team
+
+
+def resolve_existing_app_id(
+    endpoint: str,
+    token: str,
+    app_name: str,
+    team: str | None,
+    insecure_tls: bool,
+) -> str:
+    team_id = resolve_team_id(endpoint, token, team, insecure_tls)
+    desired_slug = slugify(app_name)
+    payload = http_json("GET", f"{endpoint}/api/v1/apps", token, insecure_tls=insecure_tls)
+    matches: list[dict[str, Any]] = []
+
+    for item in payload.get("apps", []):
+        item_slug = item.get("slug") or slugify(str(item.get("name", "")))
+        item_name = str(item.get("name", ""))
+        item_hostname = str(item.get("hostname", ""))
+        if team_id and item.get("teamId") != team_id:
+            continue
+        if item_slug == desired_slug or item_name.lower() == app_name.lower() or item_hostname == app_name:
+            matches.append(item)
+
+    if len(matches) == 1 and matches[0].get("id"):
+        return str(matches[0]["id"])
+    if not matches:
+        team_hint = f" in team {team!r}" if team else ""
+        raise SystemExit(
+            f"APP_NOT_FOUND: no existing VibeStack app named {app_name!r}{team_hint}. "
+            "Pass --app-id, correct --app, or omit --update to create a new app."
+        )
+    choices = ", ".join(f"{item.get('name')} ({item.get('id')})" for item in matches)
+    raise SystemExit(f"APP_AMBIGUOUS: multiple apps match {app_name!r}: {choices}. Pass --app-id.")
+
+
 def deploy(args: argparse.Namespace) -> None:
     defaults = load_defaults(args.config, args.credentials)
     args.endpoint = args.endpoint or defaults.get("endpoint")
     args.team = args.team or defaults.get("team")
+    args.app_id = args.app_id or defaults.get("app_id")
     args.token = args.token or defaults.get("token")
     if args.login_access is None:
         args.login_access = defaults.get("login_access")
@@ -320,8 +371,9 @@ def deploy(args: argparse.Namespace) -> None:
             tarball.unlink(missing_ok=True)
 
     args.endpoint = require_deploy_value(args.endpoint, "VibeStack API URL", "--api-url")
-    args.team = require_deploy_value(args.team, "VibeStack team", "--team")
     args.token = require_deploy_value(args.token, "VibeStack API token", "--token")
+    if not args.app_id and not args.update:
+        args.team = require_deploy_value(args.team, "VibeStack team", "--team")
 
     if args.external_password and not args.external_password_value:
         args.external_password_value = generate_external_password()
@@ -334,8 +386,7 @@ def deploy(args: argparse.Namespace) -> None:
         key, value = item.split("=", 1)
         secrets[key] = value
 
-    metadata = {
-        "team": args.team,
+    metadata: dict[str, Any] = {
         "appName": args.app or manifest["name"],
         "access": {
             "loginRequired": args.login_access,
@@ -347,8 +398,19 @@ def deploy(args: argparse.Namespace) -> None:
         },
         "secrets": secrets,
     }
+    if args.team:
+        metadata["team"] = args.team
 
     endpoint = args.endpoint.rstrip("/")
+    if args.update and not args.app_id:
+        args.app_id = resolve_existing_app_id(
+            endpoint,
+            args.token,
+            str(metadata["appName"]),
+            args.team,
+            args.insecure_tls,
+        )
+
     if args.app_id:
         url = f"{endpoint}/api/v1/apps/{args.app_id}/deployments"
     else:
@@ -413,6 +475,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--credentials", help="path to VibeStack credentials JSON")
     parser.add_argument("--app", help="app name; defaults to vibestack.json name")
     parser.add_argument("--app-id", help="existing app ID for update deployments")
+    parser.add_argument("--update", action="store_true", help="resolve app name to an existing app and deploy an update")
     parser.add_argument("--source", default=".", help="project root")
     parser.add_argument("--login-access", type=parse_bool)
     parser.add_argument("--external-password", type=parse_bool)
