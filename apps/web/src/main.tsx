@@ -260,7 +260,7 @@ function App() {
           api.getSettings(),
           api.listTokens(),
           api.listAuditLogs(),
-          api.getSystemUpdate()
+          api.getSystemUpdate(true)
         ]);
         setUsers(nextUsers);
         setSettings(nextSettings);
