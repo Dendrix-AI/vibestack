@@ -125,11 +125,23 @@ function versionLabel(revision?: string, tag?: string, version?: string): string
   return tag ?? (version && version !== 'unknown' ? version : '-');
 }
 
+function statusLabel(status: string): string {
+  return status
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
 function statusTone(status: AppStatus | Deployment['status'] | string): string {
   if (['running', 'succeeded'].includes(status)) return 'good';
   if (['failed', 'cancelled'].includes(status)) return 'bad';
   if (['stopped'].includes(status)) return 'neutral';
   return 'busy';
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 function readSetting<T>(settings: PlatformSettings, camel: keyof PlatformSettings, snake: keyof PlatformSettings, fallback: T): T {
@@ -424,12 +436,35 @@ function App() {
     setApps((current) => current.map((app) => (app.id === nextApp.id ? { ...app, ...nextApp } : app)));
   }
 
+  async function refreshApp(appId: string): Promise<AppSummary> {
+    const nextApp = await api.getApp(appId);
+    replaceApp(nextApp);
+    return nextApp;
+  }
+
+  async function refreshAppUntilStatus(appId: string, expectedStatus: AppStatus): Promise<void> {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await delay(800);
+      const nextApp = await refreshApp(appId);
+      if (nextApp.status === expectedStatus) {
+        return;
+      }
+    }
+  }
+
   async function handleAppAction(action: 'start' | 'stop' | 'delete' | 'postgres-create' | 'postgres-delete' | 'share', app: AppSummary, payload?: Partial<AppSummary>) {
     setDetailError(undefined);
 
     try {
-      if (action === 'start') replaceApp(await api.startApp(app.id));
-      if (action === 'stop') replaceApp(await api.stopApp(app.id));
+      if (action === 'start' || action === 'stop') {
+        const pendingStatus: AppStatus = action === 'start' ? 'starting' : 'stopping';
+        const expectedStatus: AppStatus = action === 'start' ? 'running' : 'stopped';
+        replaceApp({ ...app, status: pendingStatus });
+        replaceApp(action === 'start' ? await api.startApp(app.id) : await api.stopApp(app.id));
+        await refreshAppUntilStatus(app.id, expectedStatus);
+        await refreshDetail(app.id);
+        return;
+      }
       if (action === 'delete') {
         await api.deleteApp(app.id);
         setApps((current) => current.filter((item) => item.id !== app.id));
@@ -444,6 +479,9 @@ function App() {
       }
       if (action === 'share') replaceApp(await api.updateApp(app.id, payload ?? {}));
     } catch (caught) {
+      if (action === 'start' || action === 'stop') {
+        await refreshApp(app.id).catch(() => replaceApp(app));
+      }
       setDetailError(formatApiError(caught));
     }
   }
@@ -636,7 +674,7 @@ function AppsView(props: {
                 <strong>{app.name}</strong>
                 <small>{teamName(props.teams, app)} / {app.slug}</small>
               </span>
-              <em>{app.status}</em>
+              <em>{statusLabel(app.status)}</em>
             </button>
           ))}
         </div>
@@ -669,6 +707,9 @@ function AppDetail(props: Parameters<typeof AppsView>[0] & { app: AppSummary }) 
   const externalConfigured = props.app.externalPasswordConfigured ?? props.app.external_password_configured ?? externalEnabled;
   const url = appUrl(props.app);
   const rollbackOptions = props.detail.deployments.filter((deployment) => deployment.status === 'succeeded');
+  const lifecycleBusy = ['deploying', 'starting', 'stopping', 'updating', 'deleting'].includes(props.app.status);
+  const starting = props.app.status === 'starting';
+  const stopping = props.app.status === 'stopping';
 
   useEffect(() => {
     setAccessDraft({
@@ -717,17 +758,20 @@ function AppDetail(props: Parameters<typeof AppsView>[0] & { app: AppSummary }) 
           <h2>{props.app.name}</h2>
           <a href={url.startsWith('http') ? url : undefined} target="_blank" rel="noreferrer">{url}</a>
         </div>
-        <span className={`status-pill ${statusTone(props.app.status)}`}>{props.app.status}</span>
+        <span className={`status-pill ${statusTone(props.app.status)}`}>
+          {lifecycleBusy ? <Loader2 className="spin" size={14} /> : null}
+          {statusLabel(props.app.status)}
+        </span>
       </div>
 
       <div className="control-strip">
-        <button className="button primary" onClick={() => confirmAction(`Start ${props.app.name}?`, () => props.onAction('start', props.app))} disabled={props.app.status === 'running'}>
-          <Play size={16} /> Start
+        <button className="button primary" onClick={() => confirmAction(`Start ${props.app.name}?`, () => props.onAction('start', props.app))} disabled={lifecycleBusy || props.app.status === 'running'}>
+          {starting ? <Loader2 className="spin" size={16} /> : <Play size={16} />} {starting ? 'Starting' : 'Start'}
         </button>
-        <button className="button secondary" onClick={() => confirmAction(`Stop ${props.app.name}?`, () => props.onAction('stop', props.app))} disabled={props.app.status === 'stopped'}>
-          <Square size={16} /> Stop
+        <button className="button secondary" onClick={() => confirmAction(`Stop ${props.app.name}?`, () => props.onAction('stop', props.app))} disabled={lifecycleBusy || props.app.status === 'stopped'}>
+          {stopping ? <Loader2 className="spin" size={16} /> : <Square size={16} />} {stopping ? 'Stopping' : 'Stop'}
         </button>
-        <button className="button secondary danger" onClick={() => confirmAction(`Delete ${props.app.name}? This hides it from the management UI.`, () => props.onAction('delete', props.app))}>
+        <button className="button secondary danger" onClick={() => confirmAction(`Delete ${props.app.name}? This hides it from the management UI.`, () => props.onAction('delete', props.app))} disabled={lifecycleBusy}>
           <Trash2 size={16} /> Delete
         </button>
         <button className="button secondary" onClick={props.onRefreshDetail}>
