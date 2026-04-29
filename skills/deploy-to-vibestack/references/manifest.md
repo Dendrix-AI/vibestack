@@ -81,7 +81,17 @@ app.get("/health", (_req, res) => res.status(200).send("ok"));
 app.listen(port, "0.0.0.0");
 ```
 
-Static apps may use `/` as the health check path if the root document is always served successfully.
+For a FastAPI app:
+
+```py
+@app.get("/health")
+async def health():
+    return {"ok": True}
+```
+
+Static apps may use `/` as the health check path if the root document is always served successfully and is not protected by app-level authentication. If the app has its own login middleware, explicitly exempt `/health` from that middleware.
+
+Before deploying, prefer running the deployment helper with `--smoke-test`. It builds the packaged Docker context, starts the container locally, and verifies that `healthCheckPath` returns HTTP 2xx through the published port. Do not add unrelated tools such as Node.js, curl, or wget to an app image just to make a health probe work.
 
 ## Common Port Defaults
 

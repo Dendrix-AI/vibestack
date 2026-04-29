@@ -84,6 +84,68 @@ class DeployHelperDryRunTest(unittest.TestCase):
 
         self.assertEqual(defaults["app_id"], "de52380f-282b-44de-a741-17118f331b01")
 
+    def test_smoke_test_uses_packaged_context_before_dry_run(self) -> None:
+        module = load_helper_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            (source / "Dockerfile").write_text("FROM node:22-alpine\nEXPOSE 3000\n", encoding="utf-8")
+            (source / "vibestack.json").write_text(
+                '{"name":"smoke-app","port":3000,"healthCheckPath":"/health","persistent":true}',
+                encoding="utf-8",
+            )
+            (source / ".env").write_text("TOKEN=do-not-package", encoding="utf-8")
+            (source / "node_modules").mkdir()
+            (source / "node_modules" / "package.txt").write_text("do-not-package", encoding="utf-8")
+            calls: list[tuple[Path, dict, dict, int]] = []
+
+            def fake_local_smoke_test(smoke_source, manifest, secrets, timeout_seconds):
+                calls.append((smoke_source, manifest, secrets, timeout_seconds))
+                self.assertTrue((smoke_source / "Dockerfile").exists())
+                self.assertFalse((smoke_source / ".env").exists())
+                self.assertFalse((smoke_source / "node_modules").exists())
+
+            module.local_smoke_test = fake_local_smoke_test
+            args = module.build_parser().parse_args(
+                [
+                    "--source",
+                    str(source),
+                    "--dry-run",
+                    "--smoke-test",
+                    "--smoke-timeout",
+                    "12",
+                    "--secret",
+                    "TOKEN=secret-value",
+                ]
+            )
+
+            output = StringIO()
+            with redirect_stdout(output):
+                module.deploy(args)
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1]["healthCheckPath"], "/health")
+        self.assertEqual(calls[0][2], {"TOKEN": "secret-value"})
+        self.assertEqual(calls[0][3], 12)
+        self.assertIn("Dry run succeeded", output.getvalue())
+
+    def test_command_failures_redact_secret_values(self) -> None:
+        module = load_helper_module()
+
+        def fake_run(*args, **kwargs):
+            return subprocess.CompletedProcess(args[0], 1, "", "failed with secret-value in output")
+
+        original_run = module.subprocess.run
+        module.subprocess.run = fake_run
+        try:
+            with self.assertRaises(SystemExit) as raised:
+                module.run_command(["docker", "build", "."], "LOCAL_SMOKE_BUILD_FAILED", ["secret-value"])
+        finally:
+            module.subprocess.run = original_run
+
+        message = str(raised.exception)
+        self.assertIn("[redacted]", message)
+        self.assertNotIn("secret-value", message)
+
     def test_resolves_existing_app_id_by_name_and_team_slug(self) -> None:
         module = load_helper_module()
         calls: list[str] = []

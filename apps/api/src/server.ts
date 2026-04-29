@@ -1162,7 +1162,6 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       appId: appRow.id,
       userId: actor.user.id,
       type: 'deploy',
-      manifest: metadata,
       tarballSha: upload.tarballSha
     });
     await fs.rename(
@@ -1204,8 +1203,8 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
     const upload = await readDeploymentUpload(request, config, deployment.id);
     const metadata = DeployAppMetadata.parse(upload.metadata);
     await db.query(
-      'UPDATE deployments SET manifest = $2, source_tarball_sha256 = $3 WHERE id = $1',
-      [deployment.id, JSON.stringify(metadata), upload.tarballSha]
+      'UPDATE deployments SET source_tarball_sha256 = $2 WHERE id = $1',
+      [deployment.id, upload.tarballSha]
     );
     await applyDeploymentMetadata(db, config, id, actor, metadata);
     await addAppEvent(db, {

@@ -8,6 +8,7 @@ inside coding-agent environments without extra dependencies.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import mimetypes
 import os
@@ -15,6 +16,7 @@ import re
 import secrets as secret_random
 import ssl
 import string
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -207,6 +209,133 @@ def validate_dockerfile(source: Path, manifest: dict[str, Any]) -> None:
         )
 
 
+def redact_text(value: str, sensitive_values: list[str]) -> str:
+    redacted = value
+    for sensitive in sensitive_values:
+        if len(sensitive) >= 4:
+            redacted = redacted.replace(sensitive, "[redacted]")
+    return redacted
+
+
+def tail_text(value: str, max_lines: int = 80, max_chars: int = 4000) -> str:
+    lines = value.splitlines()[-max_lines:]
+    text = "\n".join(lines)
+    if len(text) > max_chars:
+        return text[-max_chars:]
+    return text
+
+
+def run_command(command: list[str], error_code: str, sensitive_values: list[str], cwd: Path | None = None) -> str:
+    try:
+        result = subprocess.run(
+            command,
+            cwd=str(cwd) if cwd else None,
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+    except FileNotFoundError as exc:
+        raise SystemExit(f"{error_code}: required command not found: {command[0]}") from exc
+
+    output = "\n".join(part for part in [result.stdout, result.stderr] if part)
+    if result.returncode != 0:
+        excerpt = redact_text(tail_text(output), sensitive_values)
+        raise SystemExit(f"{error_code}: command failed: {' '.join(command[:3])}\n{excerpt}")
+    return output
+
+
+class NoRedirect(request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        return None
+
+
+def health_url_ok(url: str, timeout_seconds: int) -> tuple[bool, str]:
+    opener = request.build_opener(NoRedirect)
+    req = request.Request(url, method="GET", headers={"User-Agent": "vibestack-local-smoke/1"})
+    try:
+        with opener.open(req, timeout=timeout_seconds) as response:
+            status = response.getcode()
+            if 200 <= status <= 299:
+                return True, f"HTTP {status}"
+            return False, f"HTTP {status}"
+    except error.HTTPError as exc:
+        return False, f"HTTP {exc.code}"
+    except error.URLError as exc:
+        return False, str(exc.reason)
+    except http.client.HTTPException as exc:
+        return False, exc.__class__.__name__
+    except TimeoutError:
+        return False, "request timed out"
+
+
+def mapped_host_port(container_name: str, port: int, sensitive_values: list[str]) -> str:
+    output = run_command(
+        ["docker", "port", container_name, f"{port}/tcp"],
+        "LOCAL_SMOKE_FAILED",
+        sensitive_values,
+    )
+    first = output.strip().splitlines()[0] if output.strip() else ""
+    if ":" not in first:
+        raise SystemExit(f"LOCAL_SMOKE_FAILED: Docker did not publish container port {port}.")
+    return first.rsplit(":", 1)[1]
+
+
+def local_smoke_test(
+    source: Path,
+    manifest: dict[str, Any],
+    secrets: dict[str, str],
+    timeout_seconds: int,
+) -> None:
+    image_tag = f"vibestack-local-smoke:{uuid.uuid4().hex}"
+    container_name = f"vibestack-local-smoke-{uuid.uuid4().hex[:12]}"
+    port = int(manifest["port"])
+    health_path = str(manifest["healthCheckPath"])
+    path_only = health_path if health_path.startswith("/") else f"/{health_path}"
+    sensitive_values = list(secrets.values())
+
+    print("Local smoke test: building packaged Docker context")
+    try:
+        run_command(["docker", "build", "-t", image_tag, str(source)], "LOCAL_SMOKE_BUILD_FAILED", sensitive_values)
+        env_args = [item for key, value in secrets.items() for item in ["-e", f"{key}={value}"]]
+        run_command(
+            [
+                "docker",
+                "run",
+                "-d",
+                "--name",
+                container_name,
+                "-p",
+                f"127.0.0.1::{port}",
+                *env_args,
+                image_tag,
+            ],
+            "LOCAL_SMOKE_START_FAILED",
+            sensitive_values,
+        )
+        host_port = mapped_host_port(container_name, port, sensitive_values)
+        url = f"http://127.0.0.1:{host_port}{path_only}"
+        deadline = time.time() + timeout_seconds
+        last_result = "not checked"
+        while time.time() < deadline:
+            ok, last_result = health_url_ok(url, min(5, max(1, timeout_seconds)))
+            if ok:
+                print(f"Local smoke test succeeded: {path_only} returned {last_result}")
+                return
+            time.sleep(2)
+
+        logs = run_command(["docker", "logs", "--tail", "120", container_name], "LOCAL_SMOKE_FAILED", sensitive_values)
+        excerpt = redact_text(tail_text(logs), sensitive_values)
+        raise SystemExit(
+            "LOCAL_SMOKE_HEALTH_FAILED: the packaged container did not return HTTP 2xx at "
+            f"{path_only} on port {port} within {timeout_seconds}s; last result: {last_result}.\n"
+            "Make the health path unauthenticated, fast, and independent of browser JavaScript.\n"
+            f"Container log excerpt:\n{excerpt}"
+        )
+    finally:
+        subprocess.run(["docker", "rm", "-f", container_name], check=False, text=True, capture_output=True)
+        subprocess.run(["docker", "image", "rm", "-f", image_tag], check=False, text=True, capture_output=True)
+
+
 def should_exclude(path: Path, root: Path) -> bool:
     rel = path.relative_to(root)
     parts = set(rel.parts)
@@ -396,23 +525,6 @@ def deploy(args: argparse.Namespace) -> None:
 
     manifest = load_manifest(source)
     validate_dockerfile(source, manifest)
-    tarball = make_tarball(source)
-    if args.dry_run:
-        try:
-            print(f"Dry run succeeded: packaged {source} into {tarball.stat().st_size} bytes")
-            print(f"Manifest app={manifest['name']} port={manifest['port']} health={manifest['healthCheckPath']}")
-            return
-        finally:
-            tarball.unlink(missing_ok=True)
-
-    args.endpoint = require_deploy_value(args.endpoint, "VibeStack API URL", "--api-url")
-    args.token = require_deploy_value(args.token, "VibeStack API token", "--token")
-    if not args.app_id and not args.update:
-        args.team = require_deploy_value(args.team, "VibeStack team", "--team")
-
-    if args.external_password and not args.external_password_value:
-        args.external_password_value = generate_external_password()
-        generated_external_password = args.external_password_value
 
     secrets: dict[str, str] = {}
     for item in args.secret:
@@ -421,42 +533,65 @@ def deploy(args: argparse.Namespace) -> None:
         key, value = item.split("=", 1)
         secrets[key] = value
 
-    metadata: dict[str, Any] = {
-        "appName": args.app or manifest["name"],
-        "access": {
-            "loginRequired": args.login_access,
-            "externalPasswordEnabled": args.external_password,
-            "externalPassword": args.external_password_value,
-        },
-        "postgres": {
-            "enabled": args.postgres,
-        },
-        "secrets": secrets,
-    }
-    if args.team:
-        metadata["team"] = args.team
+    tarball = make_tarball(source)
+    try:
+        if args.smoke_test:
+            with tempfile.TemporaryDirectory(prefix="vibestack-smoke-context-") as tmp:
+                smoke_source = Path(tmp)
+                with tarfile.open(tarball, "r:gz") as tar:
+                    extract_kwargs = {"filter": "data"} if sys.version_info >= (3, 12) else {}
+                    tar.extractall(smoke_source, **extract_kwargs)
+                local_smoke_test(smoke_source, manifest, secrets, args.smoke_timeout)
 
-    endpoint = args.endpoint.rstrip("/")
-    if args.update and not args.app_id:
-        args.app_id = resolve_existing_app_id(
-            endpoint,
-            args.token,
-            str(metadata["appName"]),
-            args.team,
-            args.insecure_tls,
+        if args.dry_run:
+            print(f"Dry run succeeded: packaged {source} into {tarball.stat().st_size} bytes")
+            print(f"Manifest app={manifest['name']} port={manifest['port']} health={manifest['healthCheckPath']}")
+            return
+
+        args.endpoint = require_deploy_value(args.endpoint, "VibeStack API URL", "--api-url")
+        args.token = require_deploy_value(args.token, "VibeStack API token", "--token")
+        if not args.app_id and not args.update:
+            args.team = require_deploy_value(args.team, "VibeStack team", "--team")
+
+        if args.external_password and not args.external_password_value:
+            args.external_password_value = generate_external_password()
+            generated_external_password = args.external_password_value
+
+        metadata: dict[str, Any] = {
+            "appName": args.app or manifest["name"],
+            "access": {
+                "loginRequired": args.login_access,
+                "externalPasswordEnabled": args.external_password,
+                "externalPassword": args.external_password_value,
+            },
+            "postgres": {
+                "enabled": args.postgres,
+            },
+            "secrets": secrets,
+        }
+        if args.team:
+            metadata["team"] = args.team
+
+        endpoint = args.endpoint.rstrip("/")
+        if args.update and not args.app_id:
+            args.app_id = resolve_existing_app_id(
+                endpoint,
+                args.token,
+                str(metadata["appName"]),
+                args.team,
+                args.insecure_tls,
+            )
+
+        if args.app_id:
+            url = f"{endpoint}/api/v1/apps/{args.app_id}/deployments"
+        else:
+            url = f"{endpoint}/api/v1/apps/deploy"
+
+        body, content_type = encode_multipart(
+            {"metadata": json.dumps(metadata)},
+            {"source": tarball},
         )
 
-    if args.app_id:
-        url = f"{endpoint}/api/v1/apps/{args.app_id}/deployments"
-    else:
-        url = f"{endpoint}/api/v1/apps/deploy"
-
-    body, content_type = encode_multipart(
-        {"metadata": json.dumps(metadata)},
-        {"source": tarball},
-    )
-
-    try:
         created = http_json(
             "POST",
             url,
@@ -521,6 +656,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--insecure-tls", action="store_true")
     parser.add_argument("--dry-run", action="store_true", help="validate and package without calling the API")
+    parser.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help="build the packaged Docker context locally and verify the manifest health check before upload",
+    )
+    parser.add_argument("--smoke-timeout", type=int, default=90, help="seconds to wait for local smoke health")
     parser.add_argument("--diagnostics", action="store_true", help="fetch app diagnostics instead of deploying")
     parser.add_argument("--diagnostics-tail", type=int, default=300, help="number of app and Postgres log lines to scan")
     return parser
