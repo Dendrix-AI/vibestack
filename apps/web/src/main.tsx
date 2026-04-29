@@ -246,9 +246,13 @@ function App() {
 
     try {
       const [nextApps, nextTeams] = await Promise.all([api.listApps(), api.listTeams()]);
+      const currentSelectedAppId = selectedAppId;
+      const nextSelectedAppId = nextApps.some((app) => app.id === currentSelectedAppId)
+        ? currentSelectedAppId
+        : nextApps[0]?.id ?? null;
       setApps(nextApps);
       setTeams(nextTeams);
-      setSelectedAppId((current) => current ?? nextApps[0]?.id ?? null);
+      setSelectedAppId(nextSelectedAppId);
 
       if (isAdmin(user)) {
         const [nextUsers, nextSettings, nextTokens, nextAuditLogs, nextSystemUpdate] = await Promise.all([
@@ -263,6 +267,10 @@ function App() {
         setTokens(nextTokens);
         setAuditLogs(nextAuditLogs);
         setSystemUpdate(nextSystemUpdate);
+      }
+
+      if (nextSelectedAppId && nextSelectedAppId === currentSelectedAppId) {
+        await refreshDetail(nextSelectedAppId);
       }
     } catch (caught) {
       setError(formatApiError(caught));
