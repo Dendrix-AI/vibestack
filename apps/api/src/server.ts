@@ -1254,7 +1254,9 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
           ? {
               code: deployment.error_code,
               message: deployment.error_message,
-              details: deployment.error_details_json
+              agentHint: (deployment.error_details_json as Record<string, unknown> | null)?.agentHint,
+              details: deployment.error_details_json,
+              logExcerpt: (deployment.error_details_json as Record<string, unknown> | null)?.logExcerpt
             }
           : null
     };

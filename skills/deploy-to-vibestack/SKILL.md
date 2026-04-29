@@ -85,19 +85,24 @@ Read `references/manifest.md` for the manifest contract.
 2. Ensure the app is web-accessible over HTTP.
 3. Create or update `vibestack.json` if the user's project clearly indicates the correct app name, internal port, and health check path.
 4. Ensure a Dockerfile exists. If not, create one appropriate for the app stack.
-5. Validate locally:
+5. Ensure the app's server code explicitly satisfies VibeStack runtime requirements:
+   - listens on `0.0.0.0`, not only `localhost` or `127.0.0.1`
+   - listens on the same port as `vibestack.json` and Dockerfile `EXPOSE`
+   - returns HTTP 2xx at `healthCheckPath`; add a small `/health` route when the app does not already have a reliable route
+   - keeps the server process in the foreground as the container command
+6. Validate locally:
    - manifest JSON parses
    - manifest has `name`, `port`, `healthCheckPath`, and `persistent`
    - Dockerfile exists at project root
    - Dockerfile `EXPOSE`, if present, matches manifest port
-6. Package the project as a tarball, excluding local-only and sensitive files.
-7. For updates to an existing app, resolve the app ID using saved config, the user's provided ID, or `GET /api/v1/apps`; then submit to `POST /api/v1/apps/{appId}/deployments`. Do not guess the app ID from the app name when more than one app matches.
-8. For new apps, submit the tarball and deployment metadata to `POST /api/v1/apps/deploy`.
-9. If external-password access is enabled and no password was supplied, let the helper generate one.
-10. Poll every 30 seconds until status is terminal.
-11. Report the live URL on success.
-12. If the helper generated an external app password, relay it to the user exactly once and explain that VibeStack stores only a hash.
-13. On failure, use the returned `agentHint`, error code, and details to fix the project and retry when appropriate.
+7. Package the project as a tarball, excluding local-only and sensitive files.
+8. For updates to an existing app, resolve the app ID using saved config, the user's provided ID, or `GET /api/v1/apps`; then submit to `POST /api/v1/apps/{appId}/deployments`. Do not guess the app ID from the app name when more than one app matches.
+9. For new apps, submit the tarball and deployment metadata to `POST /api/v1/apps/deploy`.
+10. If external-password access is enabled and no password was supplied, let the helper generate one.
+11. Poll every 30 seconds until status is terminal.
+12. Report the live URL on success.
+13. If the helper generated an external app password, relay it to the user exactly once and explain that VibeStack stores only a hash.
+14. On failure, use the returned `agentHint`, error code, and details to fix the project and retry when appropriate.
 
 ## Helper Script
 
@@ -163,7 +168,7 @@ Common fix patterns:
 - `MISSING_MANIFEST`: create `vibestack.json`.
 - `INVALID_MANIFEST`: repair manifest JSON and required fields.
 - `PORT_MISMATCH`: align Dockerfile `EXPOSE`, app server port, and manifest `port`.
-- `HEALTH_CHECK_FAILED`: ensure the app binds to `0.0.0.0`, uses the manifest port, and returns HTTP success at `healthCheckPath`.
+- `HEALTH_CHECK_FAILED`: inspect `details.agentHint`, `details.logExcerpt`, `details.checkedUrl`, `details.port`, and `details.healthCheckPath`; ensure the app binds to `0.0.0.0`, uses the manifest port, keeps running, and returns HTTP success at `healthCheckPath`.
 - `MAINTENANCE_MODE_ACTIVE`: stop and tell the user deployments are paused by the platform.
 - `TEAM_DEPLOYMENTS_PAUSED`: stop and tell the user deployments are paused for the team.
 

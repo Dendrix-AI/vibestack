@@ -47,6 +47,25 @@ The app should:
 - Use `/data` for persistent local file storage.
 - Use `DATABASE_URL` when VibeStack-managed Postgres is enabled.
 
+## Health Check Guidance
+
+For new apps, prefer a dedicated health route such as:
+
+```json
+{
+  "healthCheckPath": "/health"
+}
+```
+
+The route should return HTTP 200 quickly without requiring login, cookies, JavaScript, external API calls, or database writes. For an Express app:
+
+```js
+app.get("/health", (_req, res) => res.status(200).send("ok"));
+app.listen(port, "0.0.0.0");
+```
+
+Static apps may use `/` as the health check path if the root document is always served successfully.
+
 ## Common Port Defaults
 
 - Vite preview: `4173`

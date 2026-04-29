@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { Config } from '../config.js';
 import { decryptSecret, encryptSecret } from '../crypto.js';
 import type { Db } from '../db.js';
-import { buildAndRun } from './runtime.js';
+import { buildAndRun, DeploymentRuntimeError } from './runtime.js';
 import { commitSource } from './git.js';
 import { extractAndValidate } from './validation.js';
 import { upsertCloudflareDnsRecord } from '../cloudflare.js';
@@ -98,6 +98,10 @@ export async function processDeployment(db: Db, config: Config, deploymentId: st
     });
     await afterSuccessfulDeployment(db, config, row.app_id, row.hostname);
   } catch (error) {
+    if (error instanceof DeploymentRuntimeError) {
+      await fail(db, deploymentId, row.app_id, error.code, error.message, error.details);
+      return;
+    }
     await fail(db, deploymentId, row.app_id, 'DEPLOYMENT_FAILED', 'Deployment failed.', {
       reason: error instanceof Error ? error.message : String(error)
     });

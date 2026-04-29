@@ -136,10 +136,20 @@ Failure:
   "error": {
     "code": "HEALTH_CHECK_FAILED",
     "message": "The container did not return a successful response on the configured health check path.",
-    "agentHint": "Ensure the app binds to 0.0.0.0, listens on the manifest port, and returns HTTP 200 at healthCheckPath.",
+    "agentHint": "Ensure the app listens on 0.0.0.0:3000, keeps the server process running, and returns HTTP 2xx at /health. If the app has no health route, add one or set vibestack.json healthCheckPath to a route that already returns success.",
     "details": {
       "port": 3000,
-      "healthCheckPath": "/"
+      "healthCheckPath": "/health",
+      "checkedUrl": "http://127.0.0.1:3000/health",
+      "timeoutSeconds": 60,
+      "likelyCauses": [
+        "The app is not listening on port 3000.",
+        "The app is bound to localhost instead of 0.0.0.0.",
+        "The app does not return HTTP 2xx at /health.",
+        "The container process exits before the health check completes."
+      ],
+      "agentHint": "Ensure the app listens on 0.0.0.0:3000, keeps the server process running, and returns HTTP 2xx at /health. If the app has no health route, add one or set vibestack.json healthCheckPath to a route that already returns success.",
+      "logExcerpt": "..."
     },
     "logExcerpt": "..."
   }
