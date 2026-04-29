@@ -17,6 +17,17 @@ export type DockerRunMode = 'candidate' | 'routed';
 const DOCKER_LABEL_APP_ID = 'com.vibestack.app_id';
 const DOCKER_LABEL_DEPLOYMENT_ID = 'com.vibestack.deployment_id';
 
+export class DeploymentRuntimeError extends Error {
+  readonly code: string;
+  readonly details: Record<string, unknown>;
+
+  constructor(code: string, message: string, details: Record<string, unknown> = {}) {
+    super(message);
+    this.code = code;
+    this.details = details;
+  }
+}
+
 export function dockerImageTag(appId: string, deploymentId: string): string {
   return `vibestack/app-${appId}:deploy-${deploymentId}`;
 }
@@ -84,7 +95,14 @@ export async function buildAndRun(input: {
   try {
     await waitForHealth(candidateName, input.manifest.port, input.manifest.healthCheckPath);
   } catch (error) {
+    const logExcerpt = await dockerLogs(candidateName).catch(() => null);
     await removeContainer(candidateName).catch(() => undefined);
+    if (error instanceof DeploymentRuntimeError) {
+      throw new DeploymentRuntimeError(error.code, error.message, {
+        ...error.details,
+        logExcerpt
+      });
+    }
     throw error;
   }
 
@@ -198,8 +216,7 @@ export async function dockerLogsForDeployment(
   const containerName = dockerContainerName(appId, deploymentId);
   const exists = await containerExists(containerName);
   if (!exists) return null;
-  const result = await exec('docker', ['logs', '--tail', String(tail), containerName], { maxBuffer: 2 * 1024 * 1024 });
-  return [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+  return dockerLogs(containerName, tail);
 }
 
 export async function removeDockerImage(imageTag: string): Promise<void> {
@@ -247,5 +264,28 @@ async function waitForHealth(containerName: string, port: number, healthPath: st
     if (!('code' in result) || result.code === 0) return;
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
-  throw new Error(`Container did not pass health check on port ${port}${pathOnly}`);
+  throw new DeploymentRuntimeError(
+    'HEALTH_CHECK_FAILED',
+    'The container did not return a successful response on the configured health check path.',
+    {
+      port,
+      healthCheckPath: pathOnly,
+      checkedUrl: `http://127.0.0.1:${port}${pathOnly}`,
+      timeoutSeconds: 60,
+      likelyCauses: [
+        `The app is not listening on port ${port}.`,
+        'The app is bound to localhost instead of 0.0.0.0.',
+        `The app does not return HTTP 2xx at ${pathOnly}.`,
+        'The container process exits before the health check completes.'
+      ],
+      agentHint:
+        `Ensure the app listens on 0.0.0.0:${port}, keeps the server process running, and returns HTTP 2xx at ${pathOnly}. ` +
+        'If the app has no health route, add one or set vibestack.json healthCheckPath to a route that already returns success.'
+    }
+  );
+}
+
+async function dockerLogs(containerName: string, tail = 200): Promise<string> {
+  const result = await exec('docker', ['logs', '--tail', String(tail), containerName], { maxBuffer: 2 * 1024 * 1024 });
+  return [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
 }

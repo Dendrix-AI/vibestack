@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DeploymentRuntimeError,
   dockerAppLabel,
   dockerContainerName,
   dockerDeploymentLabel,
@@ -37,5 +38,21 @@ describe('docker runtime helpers', () => {
       'traefik.http.middlewares.vibestack-auth-vibestack-app-1-dep-2.forwardauth.address=http://api:3000/api/v1/gateway/forward-auth'
     );
     expect(labels).toContain('traefik.http.services.vibestack-app-1-dep-2.loadbalancer.server.port=3000');
+  });
+
+  it('carries stable deployment runtime error details', () => {
+    const error = new DeploymentRuntimeError('HEALTH_CHECK_FAILED', 'Health check failed.', {
+      port: 3000,
+      healthCheckPath: '/health',
+      agentHint: 'Fix the health route.'
+    });
+
+    expect(error.code).toBe('HEALTH_CHECK_FAILED');
+    expect(error.message).toBe('Health check failed.');
+    expect(error.details).toMatchObject({
+      port: 3000,
+      healthCheckPath: '/health',
+      agentHint: 'Fix the health route.'
+    });
   });
 });
