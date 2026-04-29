@@ -54,6 +54,32 @@ Success:
 }
 ```
 
+## List Apps
+
+Use this before update deployments when the user provides an app name but no app ID.
+
+```http
+GET /api/v1/apps
+```
+
+Success:
+
+```json
+{
+  "apps": [
+    {
+      "id": "de52380f-282b-44de-a741-17118f331b01",
+      "teamId": "8f90c863-78f2-4837-a98b-02b812ef765d",
+      "name": "sales-dashboard",
+      "slug": "sales-dashboard",
+      "hostname": "finance-sales-dashboard.apps.example.com",
+      "url": "https://finance-sales-dashboard.apps.example.com",
+      "status": "running"
+    }
+  ]
+}
+```
+
 ## Deploy Existing App
 
 ```http
@@ -61,7 +87,7 @@ POST /api/v1/apps/{appId}/deployments
 Content-Type: multipart/form-data
 ```
 
-Use the same multipart format as create-and-deploy.
+Use the same multipart format as create-and-deploy. The app ID is required for this endpoint.
 
 ## Poll Deployment
 

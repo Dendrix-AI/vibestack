@@ -134,6 +134,52 @@ function appResponse(row: AppRow & { external_password_hash?: string | null }): 
   };
 }
 
+async function applyDeploymentMetadata(
+  db: Db,
+  config: Config,
+  appId: string,
+  actor: Actor,
+  metadata: DeployAppMetadataValue
+): Promise<void> {
+  const externalPasswordHash =
+    metadata.access.externalPasswordEnabled && metadata.access.externalPassword
+      ? await hashPassword(metadata.access.externalPassword)
+      : null;
+
+  for (const [key, value] of Object.entries(metadata.secrets)) {
+    const secretKey = requireSecretKeyName(key);
+    await db.query(
+      `INSERT INTO app_secrets (app_id, key, encrypted_value, created_by_user_id, updated_by_user_id)
+       VALUES ($1, $2, $3, $4, $4)
+       ON CONFLICT (app_id, key) DO UPDATE
+       SET encrypted_value = EXCLUDED.encrypted_value,
+           updated_by_user_id = EXCLUDED.updated_by_user_id,
+           updated_at = now()`,
+      [appId, secretKey, encryptSecret(value, config.secretKey), actor.user.id]
+    );
+  }
+
+  await db.query(
+    `UPDATE apps
+     SET status = 'deploying',
+         postgres_enabled = $2,
+         updated_at = now(),
+         last_updated_by_user_id = $3,
+         login_access_enabled = $4,
+         external_password_enabled = $5,
+         external_password_hash = COALESCE($6, external_password_hash)
+     WHERE id = $1`,
+    [
+      appId,
+      metadata.postgres.enabled,
+      actor.user.id,
+      metadata.access.loginRequired,
+      metadata.access.externalPasswordEnabled,
+      externalPasswordHash
+    ]
+  );
+}
+
 async function createDeploymentRecord(
   db: Db,
   input: {
@@ -316,6 +362,7 @@ const AppSecretParam = z.object({ appId: z.string().uuid(), key: z.string().min(
 const DeploymentQuery = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50) });
 const LogQuery = z.object({ tail: z.coerce.number().int().min(1).max(1000).default(200) });
 const UpdateQuery = z.object({ refresh: z.string().optional() });
+type DeployAppMetadataValue = z.infer<typeof DeployAppMetadata>;
 
 function appPasswordCookieName(appId: string): string {
   return `vibestack_app_${appId.replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -1085,38 +1132,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       path.join(config.dataDir, 'uploads', deployment.id)
     );
 
-    for (const [key, value] of Object.entries(metadata.secrets)) {
-      const secretKey = requireSecretKeyName(key);
-      await db.query(
-        `INSERT INTO app_secrets (app_id, key, encrypted_value, created_by_user_id, updated_by_user_id)
-         VALUES ($1, $2, $3, $4, $4)
-         ON CONFLICT (app_id, key) DO UPDATE
-         SET encrypted_value = EXCLUDED.encrypted_value,
-             updated_by_user_id = EXCLUDED.updated_by_user_id,
-             updated_at = now()`,
-        [appRow.id, secretKey, encryptSecret(value, config.secretKey), actor.user.id]
-      );
-    }
-
-    await db.query(
-      `UPDATE apps
-       SET status = 'deploying',
-           postgres_enabled = $2,
-           updated_at = now(),
-           last_updated_by_user_id = $3,
-           login_access_enabled = $4,
-           external_password_enabled = $5,
-           external_password_hash = COALESCE($6, external_password_hash)
-       WHERE id = $1`,
-      [
-        appRow.id,
-        metadata.postgres.enabled,
-        actor.user.id,
-        metadata.access.loginRequired,
-        metadata.access.externalPasswordEnabled,
-        externalPasswordHash
-      ]
-    );
+    await applyDeploymentMetadata(db, config, appRow.id, actor, metadata);
     await addAppEvent(db, {
       appId: appRow.id,
       deploymentId: deployment.id,
@@ -1148,14 +1164,12 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       manifest: {}
     });
     const upload = await readDeploymentUpload(request, config, deployment.id);
+    const metadata = DeployAppMetadata.parse(upload.metadata);
     await db.query(
       'UPDATE deployments SET manifest = $2, source_tarball_sha256 = $3 WHERE id = $1',
-      [deployment.id, JSON.stringify(upload.metadata), upload.tarballSha]
+      [deployment.id, JSON.stringify(metadata), upload.tarballSha]
     );
-    await db.query("UPDATE apps SET status = 'deploying', updated_at = now(), last_updated_by_user_id = $2 WHERE id = $1", [
-      id,
-      actor.user.id
-    ]);
+    await applyDeploymentMetadata(db, config, id, actor, metadata);
     await addAppEvent(db, {
       appId: id,
       deploymentId: deployment.id,

@@ -48,7 +48,7 @@ class DeployHelperDryRunTest(unittest.TestCase):
             config = Path(tmp) / "deploy.json"
             credentials = Path(tmp) / "credentials.json"
             config.write_text(
-                '{"apiUrl":"https://vibestack.local.test","team":"test-team","loginAccess":true}',
+                '{"apiUrl":"https://vibestack.local.test","team":"test-team","appId":"de52380f-282b-44de-a741-17118f331b01","loginAccess":true}',
                 encoding="utf-8",
             )
             credentials.write_text('{"token":"test-token"}', encoding="utf-8")
@@ -71,6 +71,68 @@ class DeployHelperDryRunTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Dry run succeeded", result.stdout)
+
+    def test_config_file_can_provide_app_id_default(self) -> None:
+        module = load_helper_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "deploy.json"
+            config.write_text('{"appId":"de52380f-282b-44de-a741-17118f331b01"}', encoding="utf-8")
+
+            defaults = module.load_defaults(str(config), None)
+
+        self.assertEqual(defaults["app_id"], "de52380f-282b-44de-a741-17118f331b01")
+
+    def test_resolves_existing_app_id_by_name_and_team_slug(self) -> None:
+        module = load_helper_module()
+        calls: list[str] = []
+
+        def fake_http_json(method, url, token, body=None, content_type=None, insecure_tls=False):
+            calls.append(url)
+            if url.endswith("/api/v1/teams"):
+                return {"teams": [{"id": "team-1", "slug": "platform-admins"}]}
+            if url.endswith("/api/v1/apps"):
+                return {
+                    "apps": [
+                        {"id": "app-1", "teamId": "team-1", "name": "OKR Dashboard", "slug": "okr-dashboard"},
+                        {"id": "app-2", "teamId": "team-2", "name": "OKR Dashboard", "slug": "okr-dashboard"},
+                    ]
+                }
+            raise AssertionError(url)
+
+        module.http_json = fake_http_json
+
+        app_id = module.resolve_existing_app_id(
+            "https://vibestack.local.test",
+            "test-token",
+            "okr-dashboard",
+            "platform-admins",
+            False,
+        )
+
+        self.assertEqual(app_id, "app-1")
+        self.assertEqual(calls, ["https://vibestack.local.test/api/v1/teams", "https://vibestack.local.test/api/v1/apps"])
+
+    def test_resolve_existing_app_id_reports_ambiguous_matches(self) -> None:
+        module = load_helper_module()
+
+        def fake_http_json(method, url, token, body=None, content_type=None, insecure_tls=False):
+            return {
+                "apps": [
+                    {"id": "app-1", "name": "OKR Dashboard", "slug": "okr-dashboard"},
+                    {"id": "app-2", "name": "OKR Dashboard", "slug": "okr-dashboard"},
+                ]
+            }
+
+        module.http_json = fake_http_json
+
+        with self.assertRaisesRegex(SystemExit, "APP_AMBIGUOUS"):
+            module.resolve_existing_app_id(
+                "https://vibestack.local.test",
+                "test-token",
+                "okr-dashboard",
+                None,
+                False,
+            )
 
     def test_dry_run_fails_without_dockerfile(self) -> None:
         result = self.run_helper("missing-dockerfile")

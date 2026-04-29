@@ -35,7 +35,7 @@ Only ask for values that are missing or app-specific. For a normal deployment, d
 - Personal API token.
 - Team ID or team slug. Use the user's default team if the server supports it and the user does not specify one.
 - App name. Infer it from `vibestack.json`, `package.json`, or the project directory when possible; ask only if ambiguous.
-- Whether this is a new app, update, or rollback.
+- Whether this is a new app, update, or rollback. For an update, resolve the existing app ID before submitting source.
 - Access mode, using saved defaults when available:
   - logged-in VibeStack users
   - external app password
@@ -91,12 +91,13 @@ Read `references/manifest.md` for the manifest contract.
    - Dockerfile exists at project root
    - Dockerfile `EXPOSE`, if present, matches manifest port
 6. Package the project as a tarball, excluding local-only and sensitive files.
-7. Submit the tarball and deployment metadata to VibeStack.
-8. If external-password access is enabled and no password was supplied, let the helper generate one.
-9. Poll every 30 seconds until status is terminal.
-10. Report the live URL on success.
-11. If the helper generated an external app password, relay it to the user exactly once and explain that VibeStack stores only a hash.
-12. On failure, use the returned `agentHint`, error code, and details to fix the project and retry when appropriate.
+7. For updates to an existing app, resolve the app ID using saved config, the user's provided ID, or `GET /api/v1/apps`; then submit to `POST /api/v1/apps/{appId}/deployments`. Do not guess the app ID from the app name when more than one app matches.
+8. For new apps, submit the tarball and deployment metadata to `POST /api/v1/apps/deploy`.
+9. If external-password access is enabled and no password was supplied, let the helper generate one.
+10. Poll every 30 seconds until status is terminal.
+11. Report the live URL on success.
+12. If the helper generated an external app password, relay it to the user exactly once and explain that VibeStack stores only a hash.
+13. On failure, use the returned `agentHint`, error code, and details to fix the project and retry when appropriate.
 
 ## Helper Script
 
@@ -104,6 +105,23 @@ Use `scripts/vibestack_deploy.py` when possible:
 
 ```bash
 python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
+  --app sales-dashboard \
+  --source .
+```
+
+For an update deployment, pass the app ID when known:
+
+```bash
+python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
+  --app-id de52380f-282b-44de-a741-17118f331b01 \
+  --source .
+```
+
+If the user asks to update an existing app but only gives the name, use `--update`; the helper lists accessible apps and resolves a single unambiguous match:
+
+```bash
+python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
+  --update \
   --app sales-dashboard \
   --source .
 ```
