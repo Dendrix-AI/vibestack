@@ -1,4 +1,4 @@
-export type AppStatus = 'deploying' | 'running' | 'stopped' | 'failed' | 'updating' | 'deleting';
+export type AppStatus = 'deploying' | 'starting' | 'running' | 'stopping' | 'stopped' | 'failed' | 'updating' | 'deleting';
 
 export type DeploymentStatus =
   | 'queued'
