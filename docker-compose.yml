@@ -14,6 +14,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+    networks:
+      - default
+      - vibestack_apps
 
   redis:
     image: redis:7-alpine
@@ -77,6 +80,8 @@ services:
       DATABASE_URL: postgres://vibestack:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/vibestack
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
+      VIBESTACK_APP_POSTGRES_HOST: postgres
+      VIBESTACK_APP_POSTGRES_PORT: 5432
       POSTGRES_USER: vibestack
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: vibestack
@@ -128,6 +133,8 @@ services:
       DATABASE_URL: postgres://vibestack:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/vibestack
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
+      VIBESTACK_APP_POSTGRES_HOST: postgres
+      VIBESTACK_APP_POSTGRES_PORT: 5432
       POSTGRES_USER: vibestack
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: vibestack

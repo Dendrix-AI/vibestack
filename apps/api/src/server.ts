@@ -32,7 +32,12 @@ import type { Actor, AppRow, DeploymentRow, TeamRow, UserRow } from './types.js'
 import { runMigrations } from './migrate.js';
 import { deploymentQueue } from './queue.js';
 import { hardDeleteApp } from './runtime-cleanup.js';
-import { dockerLogsForDeployment, startExistingAppContainer, stopAppContainer } from './deployment/runtime.js';
+import {
+  dockerLogsForDeployment,
+  dockerLogsForPostgres,
+  startExistingAppContainer,
+  stopAppContainer
+} from './deployment/runtime.js';
 import { publicCloudflareSetting } from './cloudflare.js';
 import { getSelfUpdateStatus, startSelfUpdate } from './updater.js';
 
@@ -1365,6 +1370,65 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
     return {
       source: 'deployment_excerpts',
       logs: excerpts.rows.flatMap((row) => row.log_excerpt?.split('\n').map((line) => `[${row.id}] ${line}`) ?? [])
+    };
+  });
+
+  app.get('/api/v1/apps/:id/diagnostics', async (request) => {
+    const actor = await requireActor(db, request);
+    const { id } = parseParams(IdParam, request);
+    const query = parseQuery(LogQuery, request);
+    const appRow = await getAuthorizedApp(db, actor, id, 'creator');
+    const currentDeployment = appRow.current_deployment_id
+      ? await db.maybeOne<DeploymentRow>('SELECT * FROM deployments WHERE id = $1', [appRow.current_deployment_id])
+      : null;
+    const recentDeployments = await db.query<DeploymentRow>(
+      `SELECT *
+       FROM deployments
+       WHERE app_id = $1
+       ORDER BY created_at DESC
+       LIMIT 5`,
+      [id]
+    );
+    const appLogs =
+      config.runtimeDriver === 'docker' && appRow.current_deployment_id
+        ? await dockerLogsForDeployment(config, id, appRow.current_deployment_id, query.tail).catch(() => null)
+        : null;
+    const postgresCredentials = await db.maybeOne<{ database_name: string; database_user: string }>(
+      'SELECT database_name, database_user FROM app_db_credentials WHERE app_id = $1 AND deleted_at IS NULL',
+      [id]
+    );
+    const postgresLogs = postgresCredentials
+      ? await dockerLogsForPostgres(
+          config,
+          [id, postgresCredentials.database_name, postgresCredentials.database_user],
+          query.tail
+        ).catch(() => null)
+      : null;
+
+    return {
+      app: appResponse(appRow),
+      currentDeployment,
+      recentDeployments: recentDeployments.rows,
+      appLogs: {
+        source: appLogs === null ? 'unavailable' : 'docker',
+        deploymentId: appRow.current_deployment_id,
+        logs: appLogs ? appLogs.split('\n') : []
+      },
+      postgres: {
+        enabled: Boolean(postgresCredentials),
+        databaseName: postgresCredentials?.database_name ?? null,
+        databaseUser: postgresCredentials?.database_user ?? null,
+        expectedHost: postgresCredentials ? config.appPostgresHost : null,
+        expectedPort: postgresCredentials ? config.appPostgresPort : null,
+        logSource: postgresLogs?.source ?? 'unavailable',
+        containerName: postgresLogs?.containerName ?? null,
+        logs: postgresLogs?.logs ?? [],
+        note: postgresCredentials
+          ? 'Postgres logs are filtered by app id, database name, database user, and PostgreSQL ERROR/FATAL/PANIC lines.'
+          : 'This app does not have an active VibeStack-managed Postgres database.'
+      },
+      agentHint:
+        'Use appLogs first for application exceptions. If Postgres is enabled, compare errors with postgres.logs and verify the app uses DATABASE_URL without hard-coded credentials.'
     };
   });
 

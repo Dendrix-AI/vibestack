@@ -3,6 +3,8 @@ import sys
 import tempfile
 import unittest
 import importlib.util
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 
@@ -133,6 +135,36 @@ class DeployHelperDryRunTest(unittest.TestCase):
                 None,
                 False,
             )
+
+    def test_diagnostics_fetches_app_diagnostics_by_app_id(self) -> None:
+        module = load_helper_module()
+        calls: list[str] = []
+
+        def fake_http_json(method, url, token, body=None, content_type=None, insecure_tls=False):
+            calls.append(url)
+            return {"app": {"id": "app-1"}, "appLogs": {"logs": ["started"]}}
+
+        module.http_json = fake_http_json
+        args = module.build_parser().parse_args(
+            [
+                "--diagnostics",
+                "--api-url",
+                "https://vibestack.local.test",
+                "--token",
+                "test-token",
+                "--app-id",
+                "app-1",
+                "--diagnostics-tail",
+                "25",
+            ]
+        )
+
+        output = StringIO()
+        with redirect_stdout(output):
+            module.diagnostics(args)
+
+        self.assertEqual(calls, ["https://vibestack.local.test/api/v1/apps/app-1/diagnostics?tail=25"])
+        self.assertIn('"logs": [', output.getvalue())
 
     def test_dry_run_fails_without_dockerfile(self) -> None:
         result = self.run_helper("missing-dockerfile")

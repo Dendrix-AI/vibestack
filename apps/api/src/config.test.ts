@@ -33,6 +33,8 @@ describe('API configuration parsing', () => {
       repoUrl: 'https://github.com/example/vibestack.git',
       updateChannel: 'stable',
       databaseUrl: 'postgres://vibestack_user:secret@postgres:5433/vibestack_test',
+      appPostgresHost: 'postgres',
+      appPostgresPort: 5433,
       runtimeDriver: 'docker',
       traefikEntrypoint: 'websecure',
       traefikCertResolver: 'letsencrypt',
