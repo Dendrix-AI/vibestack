@@ -338,7 +338,36 @@ def resolve_existing_app_id(
     raise SystemExit(f"APP_AMBIGUOUS: multiple apps match {app_name!r}: {choices}. Pass --app-id.")
 
 
+def diagnostics(args: argparse.Namespace) -> None:
+    defaults = load_defaults(args.config, args.credentials)
+    args.endpoint = args.endpoint or defaults.get("endpoint")
+    args.team = args.team or defaults.get("team")
+    args.app_id = args.app_id or defaults.get("app_id")
+    args.token = args.token or defaults.get("token")
+
+    args.endpoint = require_deploy_value(args.endpoint, "VibeStack API URL", "--api-url")
+    args.token = require_deploy_value(args.token, "VibeStack API token", "--token")
+    endpoint = args.endpoint.rstrip("/")
+
+    if not args.app_id:
+        if not args.app:
+            raise SystemExit("APP_REQUIRED: pass --app-id or --app when requesting diagnostics.")
+        args.app_id = resolve_existing_app_id(endpoint, args.token, args.app, args.team, args.insecure_tls)
+
+    payload = http_json(
+        "GET",
+        f"{endpoint}/api/v1/apps/{args.app_id}/diagnostics?tail={args.diagnostics_tail}",
+        args.token,
+        insecure_tls=args.insecure_tls,
+    )
+    print(json.dumps(payload, indent=2))
+
+
 def deploy(args: argparse.Namespace) -> None:
+    if args.diagnostics:
+        diagnostics(args)
+        return
+
     defaults = load_defaults(args.config, args.credentials)
     args.endpoint = args.endpoint or defaults.get("endpoint")
     args.team = args.team or defaults.get("team")
@@ -486,6 +515,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--insecure-tls", action="store_true")
     parser.add_argument("--dry-run", action="store_true", help="validate and package without calling the API")
+    parser.add_argument("--diagnostics", action="store_true", help="fetch app diagnostics instead of deploying")
+    parser.add_argument("--diagnostics-tail", type=int, default=300, help="number of app and Postgres log lines to scan")
     return parser
 
 

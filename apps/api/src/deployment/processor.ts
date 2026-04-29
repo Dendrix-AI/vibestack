@@ -219,9 +219,12 @@ async function ensureAppDatabase(db: Db, config: Config, appId: string): Promise
   if (existing.rows[0]) {
     const row = existing.rows[0];
     return {
-      url: `postgres://${row.database_user}:${encodeURIComponent(
-        decryptSecret(row.encrypted_database_password, config.secretKey)
-      )}@localhost:5432/${row.database_name}`
+      url: appDatabaseUrl(
+        config,
+        row.database_user,
+        decryptSecret(row.encrypted_database_password, config.secretKey),
+        row.database_name
+      )
     };
   }
 
@@ -240,6 +243,10 @@ async function ensureAppDatabase(db: Db, config: Config, appId: string): Promise
     [appId, databaseName, databaseUser, encryptSecret(password, config.secretKey)]
   );
   return {
-    url: `postgres://${databaseUser}:${encodeURIComponent(password)}@localhost:5432/${databaseName}`
+    url: appDatabaseUrl(config, databaseUser, password, databaseName)
   };
+}
+
+export function appDatabaseUrl(config: Config, user: string, password: string, databaseName: string): string {
+  return `postgres://${user}:${encodeURIComponent(password)}@${config.appPostgresHost}:${config.appPostgresPort}/${databaseName}`;
 }

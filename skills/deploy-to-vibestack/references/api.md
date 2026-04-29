@@ -156,6 +156,50 @@ Failure:
 }
 ```
 
+## App Diagnostics
+
+Use this when a successfully deployed app returns runtime errors, such as HTTP 500s from user actions.
+
+```http
+GET /api/v1/apps/{appId}/diagnostics?tail=300
+```
+
+Success:
+
+```json
+{
+  "app": {
+    "id": "app_123",
+    "name": "todo-notes",
+    "status": "running",
+    "currentDeploymentId": "dep_456"
+  },
+  "currentDeployment": {
+    "id": "dep_456",
+    "version_number": 3,
+    "status": "succeeded"
+  },
+  "recentDeployments": [],
+  "appLogs": {
+    "source": "docker",
+    "deploymentId": "dep_456",
+    "logs": ["Listening on 3000", "DB init failed: relation notes does not exist"]
+  },
+  "postgres": {
+    "enabled": true,
+    "databaseName": "app_uuid",
+    "databaseUser": "user_uuid",
+    "expectedHost": "postgres",
+    "expectedPort": 5432,
+    "logSource": "docker",
+    "containerName": "vibestack-postgres-1",
+    "logs": ["ERROR: relation notes does not exist"],
+    "note": "Postgres logs are filtered by app id, database name, database user, and PostgreSQL ERROR/FATAL/PANIC lines."
+  },
+  "agentHint": "Use appLogs first for application exceptions. If Postgres is enabled, compare errors with postgres.logs and verify the app uses DATABASE_URL without hard-coded credentials."
+}
+```
+
 ## Rollback
 
 ```http

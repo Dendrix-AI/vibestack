@@ -45,6 +45,19 @@ Only ask for values that are missing or app-specific. For a normal deployment, d
 
 Never print API tokens or secret values. If external-password access is enabled and the helper generates a new app password, show that password to the user exactly once after deployment succeeds and tell them to save it.
 
+## Storage Policy
+
+VibeStack creators are usually not expected to make infrastructure decisions. If an app needs persistent structured data, use VibeStack-managed Postgres. Do not add or deploy app-owned database containers such as MySQL, MariaDB, MongoDB, Redis, Postgres sidecars, or SQLite databases embedded in the image. Do not hard-code database hosts, users, passwords, or database names.
+
+When the app needs persistent records, user-generated content, task lists, notes, settings, uploaded metadata, sessions, or audit/history data:
+
+- set `postgres` to `true` in `vibestack.json`
+- deploy with `--postgres true` or equivalent metadata
+- write app code to read the injected `DATABASE_URL`
+- initialize required tables idempotently on startup or through app-managed migrations
+
+Use `/data` only for simple file/blob persistence that is intentionally local to the app, such as uploaded files or generated artifacts. If the app stores queryable business data, use VibeStack-managed Postgres instead.
+
 Suggested user-level config:
 
 ```json
@@ -84,25 +97,46 @@ Read `references/manifest.md` for the manifest contract.
 1. Inspect the project and identify the app type.
 2. Ensure the app is web-accessible over HTTP.
 3. Create or update `vibestack.json` if the user's project clearly indicates the correct app name, internal port, and health check path.
-4. Ensure a Dockerfile exists. If not, create one appropriate for the app stack.
-5. Ensure the app's server code explicitly satisfies VibeStack runtime requirements:
+4. Decide storage before writing deployment files. If the app needs persistent structured data, enable VibeStack-managed Postgres and use `DATABASE_URL`. Remove unmanaged database services or local embedded database assumptions before deploying.
+5. Ensure a Dockerfile exists. If not, create one appropriate for the app stack.
+6. Ensure the app's server code explicitly satisfies VibeStack runtime requirements:
    - listens on `0.0.0.0`, not only `localhost` or `127.0.0.1`
    - listens on the same port as `vibestack.json` and Dockerfile `EXPOSE`
    - returns HTTP 2xx at `healthCheckPath`; add a small `/health` route when the app does not already have a reliable route
    - keeps the server process in the foreground as the container command
-6. Validate locally:
+7. Validate locally:
    - manifest JSON parses
    - manifest has `name`, `port`, `healthCheckPath`, and `persistent`
    - Dockerfile exists at project root
    - Dockerfile `EXPOSE`, if present, matches manifest port
-7. Package the project as a tarball, excluding local-only and sensitive files.
-8. For updates to an existing app, resolve the app ID using saved config, the user's provided ID, or `GET /api/v1/apps`; then submit to `POST /api/v1/apps/{appId}/deployments`. Do not guess the app ID from the app name when more than one app matches.
-9. For new apps, submit the tarball and deployment metadata to `POST /api/v1/apps/deploy`.
-10. If external-password access is enabled and no password was supplied, let the helper generate one.
-11. Poll every 30 seconds until status is terminal.
-12. Report the live URL on success.
-13. If the helper generated an external app password, relay it to the user exactly once and explain that VibeStack stores only a hash.
-14. On failure, use the returned `agentHint`, error code, and details to fix the project and retry when appropriate.
+8. Package the project as a tarball, excluding local-only and sensitive files.
+9. For updates to an existing app, resolve the app ID using saved config, the user's provided ID, or `GET /api/v1/apps`; then submit to `POST /api/v1/apps/{appId}/deployments`. Do not guess the app ID from the app name when more than one app matches.
+10. For new apps, submit the tarball and deployment metadata to `POST /api/v1/apps/deploy`.
+11. If external-password access is enabled and no password was supplied, let the helper generate one.
+12. Poll every 30 seconds until status is terminal.
+13. Report the live URL on success.
+14. If the helper generated an external app password, relay it to the user exactly once and explain that VibeStack stores only a hash.
+15. On failure, use the returned `agentHint`, error code, and details to fix the project and retry when appropriate.
+
+## Runtime Diagnostics
+
+When a deployed app behaves incorrectly after a successful deployment, do not guess from the UI error alone. Fetch VibeStack diagnostics first:
+
+```bash
+python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
+  --diagnostics \
+  --app-id de52380f-282b-44de-a741-17118f331b01
+```
+
+If the app ID is not known, pass `--app` and the helper will resolve one accessible app:
+
+```bash
+python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
+  --diagnostics \
+  --app todo-notes
+```
+
+Diagnostics include the current deployment, recent deployments, app container logs, and VibeStack-managed Postgres metadata plus matching Postgres log lines. Use them to identify failing routes, uncaught exceptions, database connection problems, missing tables, failed migrations, and hard-coded credentials. If Postgres is enabled, the app must use the injected `DATABASE_URL`; do not hard-code `localhost`, `127.0.0.1`, database names, usernames, or passwords. Do not print secrets or full logs back to the user; summarize the relevant error lines and fix the app code directly.
 
 ## Helper Script
 

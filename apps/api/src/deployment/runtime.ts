@@ -219,6 +219,27 @@ export async function dockerLogsForDeployment(
   return dockerLogs(containerName, tail);
 }
 
+export async function dockerLogsForPostgres(
+  config: Config,
+  filters: string[],
+  tail = 300
+): Promise<{ source: 'docker'; containerName: string; logs: string[] } | null> {
+  if (config.runtimeDriver === 'mock') return null;
+  const containerName = await postgresContainerName();
+  if (!containerName) return null;
+  const logs = await dockerLogs(containerName, tail);
+  const normalizedFilters = filters.map((value) => value.toLowerCase()).filter(Boolean);
+  const lines = logs
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+    .filter((line) => {
+      if (normalizedFilters.some((filter) => line.toLowerCase().includes(filter))) return true;
+      return /\b(ERROR|FATAL|PANIC)\b/.test(line);
+    });
+  return { source: 'docker', containerName, logs: lines };
+}
+
 export async function removeDockerImage(imageTag: string): Promise<void> {
   await exec('docker', ['image', 'rm', '-f', imageTag]).catch(() => undefined);
 }
@@ -245,6 +266,23 @@ async function containersForApp(appId: string): Promise<string[]> {
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+async function postgresContainerName(): Promise<string | null> {
+  const byLabel = await exec('docker', [
+    'ps',
+    '-a',
+    '--filter',
+    'label=com.docker.compose.service=postgres',
+    '--format',
+    '{{.Names}}'
+  ]).catch(() => ({ stdout: '' }));
+  const [name] = byLabel.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (name) return name;
+  return (await containerExists('vibestack-postgres-1')) ? 'vibestack-postgres-1' : null;
 }
 
 async function stopContainer(containerName: string): Promise<void> {
