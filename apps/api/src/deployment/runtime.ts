@@ -295,11 +295,22 @@ async function removeContainer(containerName: string): Promise<void> {
 
 async function waitForHealth(containerName: string, port: number, healthPath: string): Promise<void> {
   const pathOnly = healthPath.startsWith('/') ? healthPath : `/${healthPath}`;
-  const command = `node -e "fetch('http://127.0.0.1:${port}${pathOnly}').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"`;
+  const checkedUrl = `http://${containerName}:${port}${pathOnly}`;
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    const result = await exec('docker', ['exec', containerName, 'sh', '-lc', command]).catch((error) => error);
-    if (!('code' in result) || result.code === 0) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch(checkedUrl, {
+        redirect: 'manual',
+        signal: controller.signal
+      });
+      if (response.ok) return;
+    } catch {
+      // Keep polling until the container finishes startup or the health deadline expires.
+    } finally {
+      clearTimeout(timeout);
+    }
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
   throw new DeploymentRuntimeError(
@@ -308,7 +319,7 @@ async function waitForHealth(containerName: string, port: number, healthPath: st
     {
       port,
       healthCheckPath: pathOnly,
-      checkedUrl: `http://127.0.0.1:${port}${pathOnly}`,
+      checkedUrl,
       timeoutSeconds: 60,
       likelyCauses: [
         `The app is not listening on port ${port}.`,

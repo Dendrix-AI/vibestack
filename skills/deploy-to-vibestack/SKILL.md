@@ -1,6 +1,6 @@
 ---
 name: deploy-to-vibestack
-description: Package and deploy AI-generated web applications to a self-hosted VibeStack server. Use when a user asks to push, publish, deploy, update, or roll back a web app to VibeStack from Claude Code or another coding agent, especially when the user should not interact with Git, Docker, CI/CD, DNS, or hosting infrastructure directly.
+description: Package and deploy AI-generated web applications to a self-hosted VibeStack server. Use when a user asks to push, publish, deploy, update, or roll back a web app to VibeStack from Claude Code or another coding agent, especially when the user should not interact with Git, Docker, CI/CD, DNS, or hosting infrastructure directly. Also use when the user asks to update, refresh, or reinstall their VibeStack deployment skill.
 ---
 
 # Deploy To VibeStack
@@ -10,6 +10,22 @@ description: Package and deploy AI-generated web applications to a self-hosted V
 Use this skill to deploy a Docker-compatible web application to VibeStack through its API. The workflow is agent-driven: validate the local project, ensure it has a Dockerfile and `vibestack.json`, package it as a tarball, submit it to VibeStack, then poll until the deployment succeeds or fails.
 
 Creators should not be exposed to Git, Docker, Traefik, Cloudflare, or build-system details unless a deployment error requires a code fix.
+
+## Updating This Skill
+
+If the user asks to update, refresh, or reinstall the VibeStack deployment skill, fetch the latest skill from:
+
+<https://github.com/dankritz/vibestack/tree/main/skills/deploy-to-vibestack>
+
+Update only the installed user-level skill copy, not the current app repository. Preserve user-level VibeStack config and credentials such as `~/.config/vibestack/deploy.json`, `~/.config/vibestack/credentials.json`, `~/.vibestack/deploy.json`, and `~/.vibestack/credentials.json`.
+
+Preferred update flow:
+
+1. Locate the installed skill directory that contains this `SKILL.md`.
+2. Download or clone `https://github.com/dankritz/vibestack`.
+3. Replace the installed skill directory with `skills/deploy-to-vibestack` from the downloaded repository.
+4. Verify the installed copy contains `SKILL.md`, `scripts/vibestack_deploy.py`, `references/api.md`, and `references/manifest.md`.
+5. Do not deploy any app as part of a skill update unless the user explicitly asks for deployment afterward.
 
 ## Required Inputs
 
@@ -102,13 +118,15 @@ Read `references/manifest.md` for the manifest contract.
 6. Ensure the app's server code explicitly satisfies VibeStack runtime requirements:
    - listens on `0.0.0.0`, not only `localhost` or `127.0.0.1`
    - listens on the same port as `vibestack.json` and Dockerfile `EXPOSE`
-   - returns HTTP 2xx at `healthCheckPath`; add a small `/health` route when the app does not already have a reliable route
+   - returns HTTP 2xx at `healthCheckPath`; add a small unauthenticated `/health` route when the app does not already have a reliable route
+   - does not redirect the health path to login, require cookies, call external APIs, perform database writes, or depend on browser JavaScript
    - keeps the server process in the foreground as the container command
 7. Validate locally:
    - manifest JSON parses
    - manifest has `name`, `port`, `healthCheckPath`, and `persistent`
    - Dockerfile exists at project root
    - Dockerfile `EXPOSE`, if present, matches manifest port
+   - when Docker is available, run the helper with `--smoke-test` before uploading so the packaged container is built and the manifest health path is probed through Docker port mapping
 8. Package the project as a tarball, excluding local-only and sensitive files.
 9. For updates to an existing app, resolve the app ID using saved config, the user's provided ID, or `GET /api/v1/apps`; then submit to `POST /api/v1/apps/{appId}/deployments`. Do not guess the app ID from the app name when more than one app matches.
 10. For new apps, submit the tarball and deployment metadata to `POST /api/v1/apps/deploy`.
@@ -144,6 +162,7 @@ Use `scripts/vibestack_deploy.py` when possible:
 
 ```bash
 python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
+  --smoke-test \
   --app sales-dashboard \
   --source .
 ```
@@ -152,6 +171,7 @@ For an update deployment, pass the app ID when known:
 
 ```bash
 python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
+  --smoke-test \
   --app-id de52380f-282b-44de-a741-17118f331b01 \
   --source .
 ```
@@ -165,9 +185,11 @@ python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
   --source .
 ```
 
-The script loads defaults from environment variables and user-level config, performs local validation, creates a tarball, submits it using the VibeStack deployment API, and polls status. If the VibeStack implementation changes, read `references/api.md` and adjust the request shape.
+The script loads defaults from environment variables and user-level config, performs local validation, optionally smoke-tests the packaged Docker context, creates a tarball, submits it using the VibeStack deployment API, and polls status. If the VibeStack implementation changes, read `references/api.md` and adjust the request shape.
 
-For validation without a live server, add `--dry-run`.
+For validation without a live server, add `--dry-run`. For a stronger preflight, combine `--dry-run --smoke-test`.
+
+The smoke test builds the same packaged context that will be uploaded, starts the container with any `--secret KEY=VALUE` environment variables provided to the helper, publishes the manifest port to localhost, and requires the configured health path to return HTTP 2xx without following redirects. If the app needs secrets to start, pass them to the helper before smoke testing. Do not install Node.js, curl, wget, or other tools into the app image solely to satisfy health checks; fix the application route, port, bind address, or startup command instead.
 
 ## Local Packaging Rules
 

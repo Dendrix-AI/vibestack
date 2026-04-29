@@ -43,6 +43,11 @@ export async function processDeployment(db: Db, config: Config, deploymentId: st
       }
       manifest = validation.manifest;
       sourceCommitSha = await commitSource(config, row.app_id, sourceDir, `Deploy ${deploymentId}`);
+      await db.query('UPDATE deployments SET manifest = $2, source_commit_sha = $3 WHERE id = $1', [
+        deploymentId,
+        JSON.stringify(manifest),
+        sourceCommitSha
+      ]);
     } else if (!row.rollback_image_tag) {
       await fail(db, deploymentId, row.app_id, 'ROLLBACK_IMAGE_MISSING', 'Rollback source image is not available.', {
         rollbackSourceDeploymentId: row.rollback_source_deployment_id
