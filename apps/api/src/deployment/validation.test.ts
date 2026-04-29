@@ -95,6 +95,51 @@ describe('deployment source validation', () => {
       code: 'INVALID_SOURCE_ARCHIVE'
     });
   });
+
+  it('strips local virtualenv directories before validating the source', async () => {
+    const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'vibestack-validation-'));
+    const tarball = path.join(temp, 'source.tar.gz');
+    const extractDir = path.join(temp, 'extract');
+    const source = path.join(temp, 'source');
+    await fs.mkdir(path.join(source, '.venv', 'bin'), { recursive: true });
+    await fs.writeFile(path.join(source, 'Dockerfile'), 'FROM python:3.12-slim\nEXPOSE 8000\n');
+    await fs.writeFile(
+      path.join(source, 'vibestack.json'),
+      JSON.stringify({ name: 'python-basic', port: 8000, healthCheckPath: '/', persistent: false })
+    );
+    await fs.symlink('/usr/bin/python3', path.join(source, '.venv', 'bin', 'python'));
+    await c({ gzip: true, file: tarball, cwd: source }, ['.']);
+
+    const result = await extractAndValidate(tarball, extractDir);
+
+    expect(result).toMatchObject({ ok: true });
+    await expect(fs.access(path.join(extractDir, '.venv'))).rejects.toThrow();
+  });
+
+  it('returns INVALID_SOURCE_ARCHIVE for unsupported entries outside ignored directories', async () => {
+    const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'vibestack-validation-'));
+    const tarball = path.join(temp, 'source.tar.gz');
+    const extractDir = path.join(temp, 'extract');
+    const source = path.join(temp, 'source');
+    await fs.mkdir(path.join(source, 'public'), { recursive: true });
+    await fs.writeFile(path.join(source, 'Dockerfile'), 'FROM node:20-alpine\nEXPOSE 3000\n');
+    await fs.writeFile(
+      path.join(source, 'vibestack.json'),
+      JSON.stringify({ name: 'node-basic', port: 3000, healthCheckPath: '/', persistent: false })
+    );
+    await fs.symlink('/etc/passwd', path.join(source, 'public', 'passwd'));
+    await c({ gzip: true, file: tarball, cwd: source }, ['.']);
+
+    const result = await extractAndValidate(tarball, extractDir);
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'INVALID_SOURCE_ARCHIVE',
+      details: {
+        reason: 'unsupported tar entry public/passwd'
+      }
+    });
+  });
 });
 
 async function validateFixture(name: string) {
