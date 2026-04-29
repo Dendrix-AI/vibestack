@@ -183,6 +183,7 @@ Exclude by default:
 - `.turbo/`
 - `.cache/`
 - coverage output
+- Python virtual environments and caches such as `.venv/`, `venv/`, `env/`, `__pycache__/`, `.pytest_cache/`, `.mypy_cache/`, and `.ruff_cache/`
 - OS/editor files
 
 Do not include local credentials, API tokens, downloaded dependencies, or build artifacts unless the app explicitly requires a checked-in static build.

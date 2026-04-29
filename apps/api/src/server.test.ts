@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { buildServer } from './server.js';
+import { buildServer, deploymentResponse } from './server.js';
 import { loadConfig } from './config.js';
 import { hashPassword } from './crypto.js';
 import type { Db } from './db.js';
-import type { AppRow } from './types.js';
+import type { AppRow, DeploymentRow } from './types.js';
 
 const appId = 'de52380f-282b-44de-a741-17118f331b01';
 const teamId = '8f90c863-78f2-4837-a98b-02b812ef765d';
@@ -69,6 +69,55 @@ describe('gateway external password flow', () => {
     expect(response.statusCode).toBe(303);
     expect(response.headers.location).toBe(next);
     expect(response.headers['set-cookie']).toContain('Domain=example.com');
+  });
+});
+
+describe('deployment response serialization', () => {
+  it('redacts secret values from stored deployment manifests', () => {
+    const deployment: DeploymentRow = {
+      id: 'deployment-1',
+      app_id: appId,
+      version_number: 1,
+      type: 'deploy',
+      source_commit_sha: null,
+      source_tarball_sha256: null,
+      docker_image_tag: null,
+      manifest: {
+        appName: 'security-tv-dashboard',
+        access: {
+          loginRequired: true,
+          externalPasswordEnabled: true,
+          externalPassword: 'plain-password'
+        },
+        secrets: {
+          ELASTIC_API_KEY: 'elastic-secret',
+          JIRA_API_TOKEN: 'jira-secret'
+        }
+      },
+      status: 'queued',
+      started_by_user_id: userId,
+      rollback_source_deployment_id: null,
+      error_code: null,
+      error_message: null,
+      error_details_json: null,
+      log_excerpt: null,
+      started_at: new Date(),
+      finished_at: null,
+      created_at: new Date()
+    };
+
+    expect(deploymentResponse(deployment).manifest).toEqual({
+      appName: 'security-tv-dashboard',
+      access: {
+        loginRequired: true,
+        externalPasswordEnabled: true,
+        externalPassword: '[redacted]'
+      },
+      secrets: {
+        ELASTIC_API_KEY: '[redacted]',
+        JIRA_API_TOKEN: '[redacted]'
+      }
+    });
   });
 });
 

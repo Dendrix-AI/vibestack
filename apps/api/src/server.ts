@@ -139,6 +139,39 @@ function appResponse(row: AppRow & { external_password_hash?: string | null }): 
   };
 }
 
+export function deploymentResponse(row: DeploymentRow): DeploymentRow {
+  return {
+    ...row,
+    manifest: redactManifestSecrets(row.manifest)
+  };
+}
+
+function redactManifestSecrets(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => redactManifestSecrets(item));
+  }
+
+  if (typeof value !== 'object' || value === null) {
+    return value;
+  }
+
+  const result: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (key === 'secrets' && typeof nested === 'object' && nested !== null && !Array.isArray(nested)) {
+      result[key] = Object.fromEntries(Object.keys(nested).map((secretKey) => [secretKey, '[redacted]']));
+      continue;
+    }
+
+    if (/(password|token|secret|api[_-]?key|apikey)/i.test(key) && typeof nested === 'string') {
+      result[key] = '[redacted]';
+      continue;
+    }
+
+    result[key] = redactManifestSecrets(nested);
+  }
+  return result;
+}
+
 async function applyDeploymentMetadata(
   db: Db,
   config: Config,
@@ -1407,8 +1440,8 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
 
     return {
       app: appResponse(appRow),
-      currentDeployment,
-      recentDeployments: recentDeployments.rows,
+      currentDeployment: currentDeployment ? deploymentResponse(currentDeployment) : null,
+      recentDeployments: recentDeployments.rows.map(deploymentResponse),
       appLogs: {
         source: appLogs === null ? 'unavailable' : 'docker',
         deploymentId: appRow.current_deployment_id,

@@ -35,6 +35,12 @@ EXCLUDE_DIRS = {
     ".cache",
     "coverage",
     "__pycache__",
+    ".venv",
+    "venv",
+    "env",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
 }
 
 EXCLUDE_FILES = {
