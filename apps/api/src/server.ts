@@ -605,7 +605,7 @@ function appPasswordPage(config: Config, appRow: AppRow, next: string, error?: s
         <label>App password<input name="password" type="password" autocomplete="current-password" autofocus required /></label>
         <button type="submit">Continue</button>
       </form>
-      <p class="footer"><a href="https://dendrix.ai" rel="noopener noreferrer">Learn about Dendrix AI</a></p>
+      <p class="footer"><a href="https://www.dendrix-ai.com" rel="noopener noreferrer">Learn about Dendrix AI</a></p>
     </main>
   </body>
 </html>`;
