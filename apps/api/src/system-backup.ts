@@ -83,6 +83,28 @@ function run(command: string, args: string[], options: CommandOptions = {}): Pro
   });
 }
 
+function output(command: string, args: string[], options: CommandOptions = {}): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+
+    child.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk));
+    child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(stdout).toString('utf8').trim());
+        return;
+      }
+      reject(new Error(`${command} ${args.join(' ')} failed with exit code ${code}: ${Buffer.concat(stderr).toString('utf8')}`));
+    });
+  });
+}
+
 async function copyIfExists(source: string, destination: string): Promise<boolean> {
   try {
     await fs.cp(source, destination, { recursive: true, force: true, errorOnExist: false });
@@ -91,6 +113,37 @@ async function copyIfExists(source: string, destination: string): Promise<boolea
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
     throw error;
   }
+}
+
+function composeProjectName(config: Config): string {
+  return path.basename(config.installDir).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+}
+
+async function postgresContainerName(config: Config): Promise<string> {
+  const project = composeProjectName(config);
+  const byProject = await output('docker', [
+    'ps',
+    '--filter',
+    `label=com.docker.compose.project=${project}`,
+    '--filter',
+    'label=com.docker.compose.service=postgres',
+    '--format',
+    '{{.Names}}'
+  ]);
+  const projectMatch = byProject.split('\n').find(Boolean);
+  if (projectMatch) return projectMatch;
+
+  const byService = await output('docker', [
+    'ps',
+    '--filter',
+    'label=com.docker.compose.service=postgres',
+    '--format',
+    '{{.Names}}'
+  ]);
+  const serviceMatch = byService.split('\n').find(Boolean);
+  if (serviceMatch) return serviceMatch;
+
+  return `${project}-postgres-1`;
 }
 
 export async function createSystemBackup(config: Config): Promise<BackupArchive> {
@@ -106,7 +159,8 @@ export async function createSystemBackup(config: Config): Promise<BackupArchive>
     const composeCopied = await copyIfExists(path.join(config.sourceDir, 'docker-compose.yml'), path.join(configDir, 'docker-compose.yml'));
     const secretsCopied = await copyIfExists(path.join(config.sourceDir, 'secrets'), path.join(configDir, 'secrets'));
 
-    await run('docker', ['compose', '--project-directory', config.sourceDir, 'exec', '-T', 'postgres', 'pg_dump', '-U', 'vibestack', '--clean', '--if-exists', '--no-owner', '--no-privileges', 'vibestack'], {
+    const postgresContainer = await postgresContainerName(config);
+    await run('docker', ['exec', postgresContainer, 'pg_dump', '-U', 'vibestack', '--clean', '--if-exists', '--no-owner', '--no-privileges', 'vibestack'], {
       stdoutPath: path.join(backupRoot, 'database.sql')
     });
 
@@ -154,7 +208,8 @@ export async function restoreSystemBackup(config: Config, archivePath: string): 
     const databasePath = path.join(restoreRoot, 'database.sql');
     await fs.access(databasePath);
 
-    await run('docker', ['compose', '--project-directory', config.sourceDir, 'exec', '-T', 'postgres', 'psql', '-U', 'vibestack', 'vibestack'], {
+    const postgresContainer = await postgresContainerName(config);
+    await run('docker', ['exec', '-i', postgresContainer, 'psql', '-U', 'vibestack', 'vibestack'], {
       stdinPath: databasePath
     });
     const restoredEnv = await copyIfExists(path.join(restoreRoot, 'config', '.env'), path.join(config.sourceDir, '.env'));
