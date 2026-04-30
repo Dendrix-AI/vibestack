@@ -177,6 +177,20 @@ export async function getSelfUpdateStatus(config: Config, refresh: boolean, requ
   const latestTag =
     (await optionalGit(config, ['describe', '--tags', '--exact-match', latestRef])) ??
     (await optionalGit(config, ['describe', '--tags', '--always', latestRef]));
+  if (!latestRevision) {
+    return {
+      currentVersion,
+      currentRevision,
+      currentTag,
+      updateAvailable: false,
+      sourceAvailable: false,
+      state: 'unavailable',
+      message: `Update channel ${latestRef} is not available.`,
+      repoUrl,
+      channel,
+      updateMode: mode
+    };
+  }
   const latestVersion = latestRevision ? await rootPackageVersion(config, latestRef) : undefined;
   const changedByVersion = versionChanged(currentVersion, latestVersion);
   const changedByRevision = Boolean(currentRevision && latestRevision && currentRevision !== latestRevision);

@@ -108,4 +108,19 @@ describe('self updater release channels', () => {
       await checkout.cleanup();
     }
   });
+
+  it('marks missing update channels unavailable instead of up to date', async () => {
+    const checkout = await prepareCheckout('stable', '0.2a', '0.2a');
+    try {
+      const status = await getSelfUpdateStatus(checkout.config, true, 'beta');
+      expect(status.updateMode).toBe('version');
+      expect(status.sourceAvailable).toBe(false);
+      expect(status.state).toBe('unavailable');
+      expect(status.updateAvailable).toBe(false);
+      expect(status.latestVersion).toBeUndefined();
+      expect(status.message).toContain('origin/beta');
+    } finally {
+      await checkout.cleanup();
+    }
+  });
 });
