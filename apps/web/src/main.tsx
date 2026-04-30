@@ -31,9 +31,9 @@ import {
   TerminalSquare,
   Trash2,
   Users,
-  Workflow
 } from 'lucide-react';
 import { api, formatApiError } from './api';
+import dendrixLogo from './assets/dendrix-logo.png';
 import type {
   AppSecret,
   AppStatus,
@@ -328,12 +328,10 @@ function App() {
     <div className="app-frame">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">
-            <Workflow size={22} />
-          </div>
+          <img className="brand-mark" src={dendrixLogo} alt="Dendrix AI logo" />
           <div>
             <strong>VibeStack</strong>
-            <span>Management</span>
+            <span>by Dendrix AI</span>
           </div>
         </div>
 
@@ -376,7 +374,7 @@ function App() {
       <main className="workspace">
         <header className="topbar">
           <div>
-            <p className="eyebrow">Internal deployment platform</p>
+            <p className="eyebrow">Dendrix AI internal deployment platform</p>
             <h1>{viewTitle(view)}</h1>
           </div>
           <div className="topbar-actions">
@@ -588,18 +586,16 @@ function LoginScreen({ onLogin }: { onLogin: (user: User, teams: Team[]) => void
     <div className="login-page">
       <section className="login-panel">
         <div className="brand login-brand">
-          <div className="brand-mark">
-            <Workflow size={24} />
-          </div>
+          <img className="brand-mark" src={dendrixLogo} alt="Dendrix AI logo" />
           <div>
             <strong>VibeStack</strong>
-            <span>Management console</span>
+            <span>Community Edition by Dendrix AI</span>
           </div>
         </div>
         <div>
-          <p className="eyebrow">Protected internal platform</p>
+          <p className="eyebrow">Dendrix AI protected platform</p>
           <h1>Sign in to manage deployed apps</h1>
-          <p className="muted">Use your VibeStack account to review apps, secrets, logs, deployments, users, and platform settings.</p>
+          <p className="muted">Use your VibeStack account to review apps, secrets, logs, deployments, users, and platform settings in the Dendrix AI management console.</p>
         </div>
 
         <form className="login-form" onSubmit={submit}>
