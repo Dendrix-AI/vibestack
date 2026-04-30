@@ -32,8 +32,21 @@ export function dockerImageTag(appId: string, deploymentId: string): string {
   return `vibestack/app-${appId}:deploy-${deploymentId}`;
 }
 
+function shortDockerId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12) || 'unknown';
+}
+
 export function dockerContainerName(appId: string, deploymentId: string, mode: DockerRunMode = 'routed'): string {
+  const suffix = mode === 'candidate' ? '-cand' : '';
+  return `vstk-${shortDockerId(appId)}-${shortDockerId(deploymentId)}${suffix}`;
+}
+
+function legacyDockerContainerName(appId: string, deploymentId: string, mode: DockerRunMode = 'routed'): string {
   return `vibestack-app-${appId}-deploy-${deploymentId}${mode === 'candidate' ? '-candidate' : ''}`;
+}
+
+function dockerContainerNameCandidates(appId: string, deploymentId: string, mode: DockerRunMode = 'routed'): string[] {
+  return [dockerContainerName(appId, deploymentId, mode), legacyDockerContainerName(appId, deploymentId, mode)];
 }
 
 export function dockerAppLabel(appId: string): string {
@@ -139,7 +152,11 @@ async function startContainer(input: {
   mode: DockerRunMode;
 }): Promise<string> {
   const containerName = dockerContainerName(input.appId, input.deploymentId, input.mode);
-  await exec('docker', ['rm', '-f', containerName]).catch(() => undefined);
+  await Promise.all(
+    dockerContainerNameCandidates(input.appId, input.deploymentId, input.mode).map((name) =>
+      exec('docker', ['rm', '-f', name]).catch(() => undefined)
+    )
+  );
   const envArgs = Object.entries(input.env).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
   const dataPath = path.join(input.config.dataDir, 'apps', input.appId, 'data');
   const labelArgs = [
@@ -180,18 +197,25 @@ async function startContainer(input: {
 
 export async function stopAppContainer(config: Config, appId: string, deploymentId: string): Promise<void> {
   if (config.runtimeDriver === 'mock') return;
-  await stopContainer(dockerContainerName(appId, deploymentId));
+  await Promise.all(dockerContainerNameCandidates(appId, deploymentId).map((name) => stopContainer(name)));
 }
 
 export async function startExistingAppContainer(config: Config, appId: string, deploymentId: string): Promise<void> {
   if (config.runtimeDriver === 'mock') return;
-  await exec('docker', ['start', dockerContainerName(appId, deploymentId)]);
+  for (const name of dockerContainerNameCandidates(appId, deploymentId)) {
+    if (await containerExists(name)) {
+      await exec('docker', ['start', name]);
+      return;
+    }
+  }
 }
 
 export async function deleteAppContainer(config: Config, appId: string, deploymentId: string): Promise<void> {
   if (config.runtimeDriver === 'mock') return;
-  await removeContainer(dockerContainerName(appId, deploymentId));
-  await removeContainer(dockerContainerName(appId, deploymentId, 'candidate'));
+  await Promise.all([
+    ...dockerContainerNameCandidates(appId, deploymentId),
+    ...dockerContainerNameCandidates(appId, deploymentId, 'candidate')
+  ].map((name) => removeContainer(name)));
 }
 
 export async function stopContainersForApp(config: Config, appId: string): Promise<void> {
@@ -213,10 +237,11 @@ export async function dockerLogsForDeployment(
   tail = 200
 ): Promise<string | null> {
   if (config.runtimeDriver === 'mock') return null;
-  const containerName = dockerContainerName(appId, deploymentId);
-  const exists = await containerExists(containerName);
-  if (!exists) return null;
-  return dockerLogs(containerName, tail);
+  for (const containerName of dockerContainerNameCandidates(appId, deploymentId)) {
+    const exists = await containerExists(containerName);
+    if (exists) return dockerLogs(containerName, tail);
+  }
+  return null;
 }
 
 export async function dockerLogsForPostgres(

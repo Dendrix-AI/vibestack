@@ -12,8 +12,15 @@ import { loadConfig } from '../config.js';
 describe('docker runtime helpers', () => {
   it('uses predictable names and labels', () => {
     expect(dockerImageTag('app-1', 'dep-2')).toBe('vibestack/app-app-1:deploy-dep-2');
-    expect(dockerContainerName('app-1', 'dep-2')).toBe('vibestack-app-app-1-deploy-dep-2');
-    expect(dockerContainerName('app-1', 'dep-2', 'candidate')).toBe('vibestack-app-app-1-deploy-dep-2-candidate');
+    expect(dockerContainerName('app-1', 'dep-2')).toBe('vstk-app1-dep2');
+    expect(dockerContainerName('app-1', 'dep-2', 'candidate')).toBe('vstk-app1-dep2-cand');
+    expect(
+      dockerContainerName(
+        '166cf8a0-ba7b-49d8-b813-bf4c732af6b8',
+        '8b6a014b-716a-4961-b6f5-17e8a15c5a7f',
+        'candidate'
+      ).length
+    ).toBeLessThanOrEqual(63);
     expect(dockerAppLabel('app-1')).toBe('com.vibestack.app_id=app-1');
     expect(dockerDeploymentLabel('dep-2')).toBe('com.vibestack.deployment_id=dep-2');
   });
