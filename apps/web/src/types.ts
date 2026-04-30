@@ -225,6 +225,8 @@ export type PlatformSettings = {
   data_directory?: string;
   buildTimeoutSeconds?: number;
   build_timeout_seconds?: number;
+  updateChannel?: string;
+  update_channel?: string;
   defaultAppAccessMode?: 'login' | 'password' | 'private' | string;
   default_app_access_mode?: 'login' | 'password' | 'private' | string;
   defaultAccessMode?: 'login' | 'password' | 'private' | string;
@@ -250,6 +252,7 @@ export type SystemUpdate = {
   finishedAt?: string;
   repoUrl: string;
   channel: string;
+  updateMode?: 'version' | 'revision' | string;
 };
 
 export type MeResponse = {

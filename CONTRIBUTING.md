@@ -26,8 +26,23 @@ The sign-off means you certify that you have the right to submit the contributio
 
 ## Pull Requests
 
+- Branch from an up-to-date `main` branch.
+- Open pull requests against `main` for normal features, fixes, documentation, and dependency updates.
 - Keep pull requests focused and easy to review.
 - Do not commit secrets, private planning notes, local environment files, or customer data.
 - Include tests or validation notes when the change affects behavior.
 - Update documentation when the change affects setup, deployment, licensing, or user-visible behavior.
+- Do not open ordinary contribution pull requests against `stable`, `beta`, or `nightly`. Those branches are release channels and are moved by maintainers during release publication.
 
+## Versioning And Release Channels
+
+VibeStack separates development commits from installable releases:
+
+- `main` is the integration branch for reviewed work.
+- `stable` is the default production update channel.
+- `beta` is the prerelease channel for broader testing.
+- `nightly` is the development snapshot channel.
+
+Installed VibeStack servers compare the product release value, `vibestackRelease`, on version-tracked channels such as `stable` and `beta`. A documentation-only merge to `main` should not make production installations update.
+
+Release changes must update the root package version and workspace package versions together. Maintainers move release-channel branches or create tags only as part of an intentional release publication.

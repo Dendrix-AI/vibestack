@@ -45,6 +45,7 @@ Choose the path that matches what you are trying to do:
 - Onboard non-technical app creators: [docs/creator-onboarding.md](docs/creator-onboarding.md)
 - Deploy a first sample app: [docs/deploy-first-app.md](docs/deploy-first-app.md)
 - Operate, upgrade, back up, and restore VibeStack: [docs/operations.md](docs/operations.md)
+- Understand branches, versions, and release channels: [docs/release-process.md](docs/release-process.md)
 
 ## Deployment Skill
 
@@ -103,7 +104,7 @@ This repository is an initial public release. It includes the VibeStack API, wor
 
 ## Contributing
 
-Community contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution licensing, CLA, and DCO sign-off details.
+Community contributions are welcome. Normal pull requests target `main`; installed servers track release channels such as `stable`, `beta`, and `nightly`. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution licensing, CLA, DCO sign-off details, and branch guidance.
 
 ## License
 

@@ -158,6 +158,7 @@ VALUES
   ('defaultAppAccessMode', '"login"'::jsonb),
   ('buildTimeoutSeconds', '600'::jsonb),
   ('dataDirectory', '"/var/lib/vibestack"'::jsonb),
+  ('updateChannel', '"stable"'::jsonb),
   ('cloudflare', '{"apiTokenConfigured": false, "zoneId": null}'::jsonb)
 ON CONFLICT (key) DO NOTHING;
 

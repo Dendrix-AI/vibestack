@@ -66,7 +66,7 @@ async function currentSettings(db: Db, config: Config): Promise<Record<string, u
   const rows = await db.query<{ key: string; value_json: unknown; encrypted: boolean }>(
     'SELECT key, value_json, encrypted FROM platform_settings ORDER BY key'
   );
-  return Object.fromEntries(
+  const settings = Object.fromEntries(
     rows.rows.map((row) => {
       if (row.key === 'cloudflare') {
         const setting = (row.value_json as Record<string, unknown>) ?? {};
@@ -88,6 +88,33 @@ async function currentSettings(db: Db, config: Config): Promise<Record<string, u
       return [row.key, row.encrypted ? { configured: true } : row.value_json];
     })
   );
+  return {
+    updateChannel: config.updateChannel,
+    ...settings
+  };
+}
+
+function validateUpdateChannel(value: unknown): string {
+  if (typeof value !== 'string') {
+    throw new HttpError({ code: 'INVALID_SETTING', message: 'Update channel must be a branch name.', statusCode: 400 });
+  }
+  const channel = value.trim();
+  const validRef = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,119}$/.test(channel) &&
+    !channel.includes('..') &&
+    !channel.includes('//') &&
+    !channel.endsWith('/') &&
+    !channel.endsWith('.lock');
+  if (!validRef) {
+    throw new HttpError({ code: 'INVALID_SETTING', message: 'Update channel must be a valid Git branch name.', statusCode: 400 });
+  }
+  return channel;
+}
+
+async function currentUpdateChannel(db: Db, config: Config): Promise<string> {
+  const row = await db.maybeOne<{ value_json: unknown }>(
+    "SELECT value_json FROM platform_settings WHERE key = 'updateChannel'"
+  );
+  return row ? validateUpdateChannel(row.value_json) : config.updateChannel;
 }
 
 async function maintenanceMode(db: Db): Promise<boolean> {
@@ -925,18 +952,20 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       'defaultAppAccessMode',
       'buildTimeoutSeconds',
       'dataDirectory',
+      'updateChannel',
       'cloudflare'
     ]);
     for (const [key, value] of Object.entries(body)) {
       if (!allowed.has(key)) {
         throw new HttpError({ code: 'INVALID_SETTING', message: `Setting ${key} is not supported.`, statusCode: 400 });
       }
+      const storedValue = key === 'updateChannel' ? validateUpdateChannel(value) : value;
       await db.query(
         `INSERT INTO platform_settings (key, value_json, encrypted, updated_by_user_id, updated_at)
          VALUES ($1, $2, false, $3, now())
          ON CONFLICT (key) DO UPDATE
          SET value_json = EXCLUDED.value_json, updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = now()`,
-        [key, JSON.stringify(value), actor.user.id]
+        [key, JSON.stringify(storedValue), actor.user.id]
       );
     }
     await writeAuditLog(db, { actor, action: 'settings.updated', targetType: 'settings', sourceIp: clientIp(request), metadata: { keys: Object.keys(body) } });
@@ -947,14 +976,16 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
     const actor = await requireActor(db, request);
     requirePlatformAdmin(actor);
     const query = parseQuery(UpdateQuery, request);
-    return { update: await getSelfUpdateStatus(config, query.refresh === 'true' || query.refresh === '1') };
+    const channel = await currentUpdateChannel(db, config);
+    return { update: await getSelfUpdateStatus(config, query.refresh === 'true' || query.refresh === '1', channel) };
   });
 
   app.post('/api/v1/system/update', async (request, reply) => {
     const actor = await requireActor(db, request);
     requirePlatformAdmin(actor);
     try {
-      const update = await startSelfUpdate(config);
+      const channel = await currentUpdateChannel(db, config);
+      const update = await startSelfUpdate(config, channel);
       await writeAuditLog(db, {
         actor,
         action: 'system.update_started',
