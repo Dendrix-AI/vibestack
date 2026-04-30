@@ -19,8 +19,11 @@
 
 ## Release Work
 
-- When asked to prepare a release, create a release branch such as `codex/release-0.2a`.
-- Bump `vibestackRelease`, the root package version, and all workspace package versions together before opening the release pull request.
+- When asked to release to any version-tracked channel, such as `stable` or `beta`, create a release-prep branch such as `codex/release-0.2b`, bump `vibestackRelease`, the root package version, and all workspace package versions together, then open a pull request against `main`.
+- Do not move version-tracked channels before the release pull request is merged.
 - Release pull requests must include the intended version, target channel, concise change summary, and validation commands that were run.
-- After a release PR is merged, create or move release tags or channel branches only when release publication is explicitly confirmed.
+- After a release PR is merged, publish the requested channel only when release publication is explicitly confirmed. Publishing means moving the channel branch to the merged release commit and, when requested, creating the release tag.
+- When asked to publish or release any revision-tracked channel, such as `nightly`, do not bump `vibestackRelease` unless the user explicitly asks for a versioned release. Move the requested channel to the requested commit or to current `main` after confirming the target commit.
+- When asked to promote one channel to another, for example `nightly` to `beta` or `beta` to `stable`, verify both branch heads and move the target channel branch to the exact source channel commit. Do not create a merge commit between channel branches.
+- If the user names an unrecognized channel such as `testing`, first check whether `origin/<channel>` exists and whether docs identify it as version-tracked or revision-tracked. If it does not exist or its tracking policy is unclear, ask whether they mean an existing channel or want a new version-tracked or revision-tracked channel.
 - Never move `stable`, `beta`, or `nightly` as part of an ordinary feature PR.
