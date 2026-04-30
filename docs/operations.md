@@ -35,7 +35,10 @@ sudo docker compose up -d --build
 sudo docker compose ps
 ```
 
-VibeStack currently tracks the `main` update channel by default. Pin to a release branch or tag when you need stricter production change control.
+VibeStack tracks the `stable` update channel by default. Platform admins can switch the tracked branch from Settings to `stable`, `beta`, `nightly`, or `main`.
+
+- `stable` and `beta` are version-tracked channels. VibeStack offers an update when the branch's `vibestackRelease` value changes.
+- `nightly` and `main` are revision-tracked channels. VibeStack offers an update whenever the tracked branch moves.
 
 ## Backup
 

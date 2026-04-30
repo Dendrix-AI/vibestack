@@ -121,9 +121,13 @@ function formatDate(value?: string | null): string {
   }).format(new Date(value));
 }
 
-function versionLabel(revision?: string, tag?: string, version?: string): string {
-  if (revision) return revision.slice(0, 7);
-  return tag ?? (version && version !== 'unknown' ? version : '-');
+function shortRevision(revision?: string): string {
+  return revision ? revision.slice(0, 7) : '-';
+}
+
+function versionLabel(version?: string, tag?: string, revision?: string): string {
+  if (version && version !== 'unknown') return version;
+  return tag ?? shortRevision(revision);
 }
 
 function statusLabel(status: string): string {
@@ -1075,6 +1079,7 @@ function SettingsView({
         baseDomain: readSetting(draft, 'baseDomain', 'base_domain', ''),
         dataDirectory: readSetting(draft, 'dataDirectory', 'data_directory', ''),
         buildTimeoutSeconds: readSetting(draft, 'buildTimeoutSeconds', 'build_timeout_seconds', 900),
+        updateChannel: readSetting(draft, 'updateChannel', 'update_channel', 'stable'),
         defaultAppAccessMode: readSetting(draft, 'defaultAppAccessMode', 'default_app_access_mode', readSetting(draft, 'defaultAccessMode', 'default_access_mode', 'login')),
         maintenanceMode: readSetting(draft, 'maintenanceMode', 'maintenance_mode', false),
         announcementBanner: readSetting(draft, 'announcementBanner', 'announcement_banner', ''),
@@ -1095,8 +1100,9 @@ function SettingsView({
   const cloudflareConfigured = Boolean(cloudflare.configured ?? cloudflare.apiTokenConfigured ?? cloudflare.api_token_configured);
   const updateAvailable = Boolean(update?.updateAvailable);
   const updateRunning = update?.state === 'running';
-  const currentVersionLabel = versionLabel(update?.currentRevision, update?.currentTag, update?.currentVersion);
-  const latestVersionLabel = versionLabel(update?.latestRevision, update?.latestTag, update?.latestVersion);
+  const currentVersionLabel = versionLabel(update?.currentVersion, update?.currentTag, update?.currentRevision);
+  const latestVersionLabel = versionLabel(update?.latestVersion, update?.latestTag, update?.latestRevision);
+  const selectedChannel = readSetting(draft, 'updateChannel', 'update_channel', update?.channel ?? 'stable');
 
   async function checkUpdate() {
     setError(undefined);
@@ -1147,10 +1153,13 @@ function SettingsView({
       </section>
       <section className="panel">
         <PanelTitle icon={GitBranch} title="Version" />
+        <label>Update channel<select value={selectedChannel} onChange={(event) => setDraft({ ...draft, updateChannel: event.target.value })}><option value="stable">Stable</option><option value="beta">Beta</option><option value="nightly">Nightly</option><option value="main">Main</option></select></label>
         <dl className="version-list">
-          <div><dt>Current</dt><dd>{currentVersionLabel}</dd></div>
-          <div><dt>Latest</dt><dd>{latestVersionLabel}</dd></div>
-          <div><dt>Channel</dt><dd>{update?.channel ?? 'main'}</dd></div>
+          <div><dt>Current version</dt><dd>{currentVersionLabel}</dd></div>
+          <div><dt>Latest version</dt><dd>{latestVersionLabel}</dd></div>
+          <div><dt>Current build</dt><dd>{shortRevision(update?.currentRevision)}</dd></div>
+          <div><dt>Latest build</dt><dd>{shortRevision(update?.latestRevision)}</dd></div>
+          <div><dt>Channel</dt><dd>{update?.channel ?? 'stable'}</dd></div>
         </dl>
         <span className={`status-pill ${updateRunning ? 'busy' : updateAvailable ? 'good' : update?.sourceAvailable === false ? 'bad' : 'neutral'}`}>
           {updateRunning ? <Loader2 className="spin" size={14} /> : null}

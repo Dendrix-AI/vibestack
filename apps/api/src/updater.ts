@@ -9,6 +9,7 @@ const STATUS_DIR = '.vibestack-update';
 const STATUS_FILE = 'status.json';
 
 type SelfUpdateState = 'idle' | 'checking' | 'running' | 'succeeded' | 'failed' | 'unavailable';
+type UpdateMode = 'version' | 'revision';
 
 export type SelfUpdateStatus = {
   currentVersion: string;
@@ -25,6 +26,7 @@ export type SelfUpdateStatus = {
   finishedAt?: string;
   repoUrl: string;
   channel: string;
+  updateMode: UpdateMode;
 };
 
 type PersistedUpdateStatus = {
@@ -116,15 +118,37 @@ async function localPackageVersion(config: Config): Promise<string> {
   return 'unknown';
 }
 
-function remoteRef(config: Config): string {
-  return `origin/${config.updateChannel}`;
+function updateMode(channel: string): UpdateMode {
+  return channel === 'nightly' || channel === 'main' ? 'revision' : 'version';
 }
 
-export async function getSelfUpdateStatus(config: Config, refresh: boolean): Promise<SelfUpdateStatus> {
+function validateChannel(channel: string): string {
+  const validRef = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,119}$/.test(channel) &&
+    !channel.includes('..') &&
+    !channel.includes('//') &&
+    !channel.endsWith('/') &&
+    !channel.endsWith('.lock');
+  if (!validRef) {
+    throw new Error('Update channel must be a valid Git branch name.');
+  }
+  return channel;
+}
+
+function remoteRef(channel: string): string {
+  return `origin/${channel}`;
+}
+
+function versionChanged(currentVersion: string, latestVersion?: string): boolean | undefined {
+  if (!latestVersion || currentVersion === 'unknown' || latestVersion === 'unknown') return undefined;
+  return currentVersion !== latestVersion;
+}
+
+export async function getSelfUpdateStatus(config: Config, refresh: boolean, requestedChannel?: string): Promise<SelfUpdateStatus> {
   const persisted = await readPersistedStatus(config);
   const currentVersion = await localPackageVersion(config);
   const repoUrl = config.repoUrl;
-  const channel = config.updateChannel;
+  const channel = validateChannel(requestedChannel ?? config.updateChannel);
+  const mode = updateMode(channel);
 
   if (!(await pathExists(path.join(config.sourceDir, '.git')))) {
     return {
@@ -135,7 +159,8 @@ export async function getSelfUpdateStatus(config: Config, refresh: boolean): Pro
       state: 'unavailable',
       message: `${config.sourceDir} is not a git checkout.`,
       repoUrl,
-      channel
+      channel,
+      updateMode: mode
     };
   }
 
@@ -143,7 +168,7 @@ export async function getSelfUpdateStatus(config: Config, refresh: boolean): Pro
     await git(config, ['fetch', '--tags', 'origin']);
   }
 
-  const latestRef = remoteRef(config);
+  const latestRef = remoteRef(channel);
   const currentRevision = await optionalGit(config, ['rev-parse', 'HEAD']);
   const currentTag =
     (await optionalGit(config, ['describe', '--tags', '--exact-match', 'HEAD'])) ??
@@ -153,6 +178,9 @@ export async function getSelfUpdateStatus(config: Config, refresh: boolean): Pro
     (await optionalGit(config, ['describe', '--tags', '--exact-match', latestRef])) ??
     (await optionalGit(config, ['describe', '--tags', '--always', latestRef]));
   const latestVersion = latestRevision ? await rootPackageVersion(config, latestRef) : undefined;
+  const changedByVersion = versionChanged(currentVersion, latestVersion);
+  const changedByRevision = Boolean(currentRevision && latestRevision && currentRevision !== latestRevision);
+  const updateAvailable = mode === 'version' ? changedByVersion ?? changedByRevision : changedByRevision;
 
   return {
     currentVersion,
@@ -161,14 +189,15 @@ export async function getSelfUpdateStatus(config: Config, refresh: boolean): Pro
     latestVersion,
     latestRevision,
     latestTag,
-    updateAvailable: Boolean(currentRevision && latestRevision && currentRevision !== latestRevision),
+    updateAvailable,
     sourceAvailable: true,
     state: persisted.state ?? 'idle',
     message: persisted.message,
     startedAt: persisted.startedAt,
     finishedAt: persisted.finishedAt,
     repoUrl,
-    channel
+    channel,
+    updateMode: mode
   };
 }
 
@@ -176,8 +205,8 @@ function shellString(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-function updateScript(config: Config): string {
-  const channel = shellString(config.updateChannel);
+function updateScript(config: Config, selectedChannel: string): string {
+  const channel = shellString(selectedChannel);
   return `set -eu
 apk add --no-cache git >/dev/null
 mkdir -p ${STATUS_DIR}
@@ -201,8 +230,8 @@ git config --global --add safe.directory /workspace
 git remote set-url origin ${shellString(config.repoUrl)}
 git fetch --tags origin
 before="$(git rev-parse --short HEAD)"
-write_status running "Applying update from origin/${config.updateChannel}." no
-git pull --ff-only origin ${channel}
+write_status running "Applying update from origin/${selectedChannel}." no
+git checkout -B ${channel} origin/${selectedChannel}
 after="$(git rev-parse --short HEAD)"
 write_status running "Rebuilding VibeStack services." no
 docker compose --project-directory /workspace pull postgres redis traefik
@@ -211,8 +240,9 @@ write_status succeeded "Updated from $before to $after." yes
 `;
 }
 
-export async function startSelfUpdate(config: Config): Promise<SelfUpdateStatus> {
-  const current = await getSelfUpdateStatus(config, true);
+export async function startSelfUpdate(config: Config, requestedChannel?: string): Promise<SelfUpdateStatus> {
+  const channel = validateChannel(requestedChannel ?? config.updateChannel);
+  const current = await getSelfUpdateStatus(config, true, channel);
   if (!current.sourceAvailable) {
     throw new Error(current.message ?? 'VibeStack source checkout is not available.');
   }
@@ -250,7 +280,7 @@ export async function startSelfUpdate(config: Config): Promise<SelfUpdateStatus>
         'docker:29-cli',
         'sh',
         '-lc',
-        updateScript(config)
+        updateScript(config, channel)
       ],
       { timeout: 60_000, maxBuffer: 1024 * 1024 }
     );
