@@ -36,6 +36,16 @@ VibeStack v1 targets a single-host Docker Compose installation with:
 - Maintenance mode and admin-configurable announcement banner.
 - OpenAPI-first API design.
 
+## Quickstart Paths
+
+Choose the path that matches what you are trying to do:
+
+- Install VibeStack on a server: [docs/install.md](docs/install.md)
+- Configure teams, users, tokens, and platform settings: [docs/admin-guide.md](docs/admin-guide.md)
+- Onboard non-technical app creators: [docs/creator-onboarding.md](docs/creator-onboarding.md)
+- Deploy a first sample app: [docs/deploy-first-app.md](docs/deploy-first-app.md)
+- Operate, upgrade, back up, and restore VibeStack: [docs/operations.md](docs/operations.md)
+
 ## Deployment Skill
 
 The initial Claude Code companion skill lives in:
@@ -50,49 +60,32 @@ The skill also includes a reference API contract and a helper script:
 - [skills/deploy-to-vibestack/references/manifest.md](skills/deploy-to-vibestack/references/manifest.md)
 - [skills/deploy-to-vibestack/scripts/vibestack_deploy.py](skills/deploy-to-vibestack/scripts/vibestack_deploy.py)
 
-## App Creator Onboarding
+## App Creator Workflow
 
-App creators should not need to clone this repository, read deployment docs, or learn Docker. Give them the VibeStack hostname, hosted app base domain, their team slug, and instructions for creating a personal API token in VibeStack. Then they can paste this prompt into Claude Code once to install the reusable deployment skill:
+App creators should not need to clone this repository, read deployment docs, or learn Docker. An administrator gives each creator:
+
+- the VibeStack management URL
+- the hosted app base domain
+- their team slug
+- an API token created from VibeStack
+- the setup prompt in [docs/creator-onboarding.md](docs/creator-onboarding.md)
+
+After the deployment skill is installed once, the normal creator workflow is:
 
 ```text
-I want you to install the reusable VibeStack deployment skill in Claude Code.
-
-First, ask me for:
-- My VibeStack hostname, for example https://vibestack.example.com
-- My hosted app base domain, for example apps.example.com
-- My default VibeStack team name or team slug
-- Whether future apps should default to VibeStack login access, external-password access, or both
-- Whether future apps should default to no database unless I explicitly ask for Postgres
-- Whether I already have a VibeStack API token
-
-Do not ask for an app name yet. This skill should be reusable for many different apps. Only ask for an app name later when I explicitly deploy a specific app.
-
-If I provide an API token, do not print it back to me. Do not commit it. Do not store it in any app repository. If Claude Code has a secure local user-level secrets mechanism, use that; otherwise tell me that you will ask for the token at deployment time.
-
-Then install the VibeStack deployment skill for Claude Code:
-1. Fetch https://github.com/Dendrix-AI/vibestack
-2. Copy the repository folder `skills/deploy-to-vibestack` into the local Claude Code skills directory as `deploy-to-vibestack`.
-3. If you are not sure where Claude Code skills are installed on this machine, inspect the local Claude Code configuration and ask me before writing files.
-4. Verify that the installed skill contains `SKILL.md`, `scripts/vibestack_deploy.py`, `references/api.md`, and `references/manifest.md`.
-
-After the skill is installed:
-1. Create `~/.config/vibestack/deploy.json` with my VibeStack hostname, hosted app base domain, default team, and access defaults. Use this shape:
-   `{"apiUrl":"https://vibestack.example.com","baseDomain":"apps.example.com","team":"team-slug","loginAccess":true,"externalPassword":false,"postgres":false}`
-2. If I provide an API token and there is no better secure secrets store, create `~/.config/vibestack/credentials.json` with this shape:
-   `{"token":"vstk_..."}`
-3. Set both files to user-readable only, for example mode `0600`.
-4. Do not write either file inside any app repository.
-5. Explain how I can deploy any future app by opening that app in Claude Code and saying: "Deploy this app to VibeStack."
-6. Do not deploy the current app unless I explicitly ask you to.
+Deploy this app to VibeStack.
 ```
-
-Administrators should give creators a team slug rather than a database ID when possible. The default bootstrap team is usually `platform-admins`, but production teams should be created per group or department.
 
 ## Debian/Ubuntu Server Install
 
 VibeStack includes a Debian/Ubuntu installer that configures Docker, Docker Compose, Traefik, Let's Encrypt, the management host, the app base domain, and the initial platform admin.
 
 ```bash
+sudo apt-get update
+sudo apt-get install -y git
+git clone https://github.com/Dendrix-AI/vibestack.git
+cd vibestack
+
 sudo ./scripts/install-linux.sh \
   --domain apps.example.com \
   --host vibestack.example.com \
@@ -102,7 +95,7 @@ sudo ./scripts/install-linux.sh \
   --cloudflare-zone-id "$CLOUDFLARE_ZONE_ID"
 ```
 
-The Cloudflare token must be able to edit DNS records in the zone used by the hosted app base domain. The installer points the management host, Traefik dashboard host, and hosted-app wildcard at the server, writes `/opt/vibestack/.env`, stores Traefik dashboard basic auth in `/opt/vibestack/secrets`, exposes only ports 80 and 443, redirects HTTP to HTTPS, and routes deployed apps through Traefik's HTTPS entrypoint with Let's Encrypt certificates.
+The Cloudflare token must be able to edit DNS records in the zone used by the hosted app base domain. See [docs/install.md](docs/install.md) for prerequisites, DNS requirements, success checks, and troubleshooting.
 
 ## Current Status
 

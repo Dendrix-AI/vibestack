@@ -331,6 +331,10 @@ node_name() {
   sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -n 1
 }
 
+release_name() {
+  sed -n 's/.*"vibestackRelease"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${INSTALL_DIR}/package.json" | head -n 1
+}
+
 derive_cookie_domain() {
   if [[ "$VIBESTACK_HOST" == "$BASE_DOMAIN" || "$VIBESTACK_HOST" == *".${BASE_DOMAIN}" ]]; then
     printf '%s' "$BASE_DOMAIN"
@@ -425,10 +429,11 @@ main() {
   prepare_repo
   write_env
   start_stack
+  installed_release="$(release_name)"
 
   cat <<SUMMARY
 
-VibeStack v0.2a is installed.
+VibeStack ${installed_release:-current version} is installed.
 
 Management URL: https://${VIBESTACK_HOST}
 Traefik URL:    https://${TRAEFIK_DASHBOARD_HOST}

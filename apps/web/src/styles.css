@@ -757,6 +757,13 @@ textarea:focus {
   white-space: nowrap;
 }
 
+.prompt-preview {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  line-height: 1.55;
+  min-height: 520px;
+  white-space: pre-wrap;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
