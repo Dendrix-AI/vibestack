@@ -26,7 +26,8 @@ After installing VibeStack:
 4. Create viewer accounts for people who only need to use deployed apps.
 5. Confirm the hosted app base domain and Cloudflare settings.
 6. Decide the default access mode for new apps.
-7. Send creators the onboarding instructions from [creator-onboarding.md](creator-onboarding.md).
+7. Choose the update channel. Use `stable` for production unless you intentionally want `beta` or `nightly` builds.
+8. Send creators the onboarding instructions from [creator-onboarding.md](creator-onboarding.md).
 
 Use readable team slugs such as `finance`, `ops`, or `people-team`. Creators and deployment agents can use slugs without seeing internal database IDs.
 
@@ -71,6 +72,17 @@ Keep the token scoped as narrowly as possible:
 - Permissions: DNS edit.
 
 Do not reuse a broad personal Cloudflare token when a scoped token can do the job.
+
+## Update Channels
+
+VibeStack tracks `stable` by default. Platform admins can switch the channel in Settings.
+
+- `stable`: production releases. Updates appear when the VibeStack release version changes.
+- `beta`: prerelease testing. Updates appear when the beta release version changes.
+- `nightly`: frequent development snapshots. Updates appear whenever the branch moves.
+- `main`: developer testing against the integration branch.
+
+For production installations, prefer `stable`. Use `beta` or `nightly` only when you are willing to test changes before they reach the stable channel.
 
 ## Onboarding Creators
 

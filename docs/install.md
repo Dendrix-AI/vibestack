@@ -103,6 +103,7 @@ After install, verify:
 4. Create a production team in the VibeStack UI.
 5. Create a test user or API token.
 6. Deploy the sample app using [deploy-first-app.md](deploy-first-app.md).
+7. Confirm the update channel in Settings. New installs default to `stable`.
 
 On the server, useful checks are:
 
@@ -122,7 +123,7 @@ After logging in:
 2. Give creators a team slug, not a database ID.
 3. Create users for app creators and viewers.
 4. Create API tokens from the VibeStack UI only when needed.
-5. Review platform settings, including base domain, default access mode, maintenance mode, and Cloudflare status.
+5. Review platform settings, including base domain, update channel, default access mode, maintenance mode, and Cloudflare status.
 
 The bootstrap team is usually `platform-admins`. Use separate teams for production creator groups.
 

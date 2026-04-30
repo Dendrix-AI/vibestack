@@ -40,6 +40,10 @@ VibeStack tracks the `stable` update channel by default. Platform admins can swi
 - `stable` and `beta` are version-tracked channels. VibeStack offers an update when the branch's `vibestackRelease` value changes.
 - `nightly` and `main` are revision-tracked channels. VibeStack offers an update whenever the tracked branch moves.
 
+For production servers, track `stable`. Track `beta` for prerelease validation and `nightly` for development snapshots. Avoid tracking `main` on production servers; `main` is the integration branch for pull requests and may include changes that have not been published as a release.
+
+For maintainer release workflow details, see [release-process.md](release-process.md).
+
 ## Backup
 
 Back up:
