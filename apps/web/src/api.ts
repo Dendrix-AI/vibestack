@@ -12,6 +12,7 @@ import type {
   PlatformSettings,
   PostgresCredentials,
   SystemUpdate,
+  SystemRestore,
   Team,
   TeamMembership,
   User
@@ -130,6 +131,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   return parsed as T;
+}
+
+function contentDispositionFilename(value: string | null): string | undefined {
+  if (!value) return undefined;
+  const match = /filename="?([^"]+)"?/i.exec(value);
+  return match?.[1];
 }
 
 export const api = {
@@ -301,6 +308,30 @@ export const api = {
   startSystemUpdate(): Promise<SystemUpdate> {
     return request<unknown>('/system/update', { method: 'POST' }).then((value) =>
       unwrap<SystemUpdate>(value, 'update')
+    );
+  },
+
+  async downloadSystemBackup(): Promise<{ blob: Blob; filename: string }> {
+    const response = await fetch(`${API_BASE}/system/backup`, { credentials: 'include' });
+    if (!response.ok) {
+      const parsed = await parseResponse(response);
+      if (isRecord(parsed) && isRecord(parsed.error)) {
+        throw new ApiError(response.status, parsed as ApiErrorBody);
+      }
+      throw new Error(`Backup failed with status ${response.status}`);
+    }
+    return {
+      blob: await response.blob(),
+      filename: contentDispositionFilename(response.headers.get('Content-Disposition')) ?? 'vibestack-backup.tar.gz'
+    };
+  },
+
+  restoreSystemBackup(file: File): Promise<SystemRestore> {
+    const form = new FormData();
+    form.set('confirm', 'restore');
+    form.set('backup', file);
+    return request<unknown>('/system/restore', { method: 'POST', body: form }).then((value) =>
+      unwrap<SystemRestore>(value, 'restore')
     );
   },
 

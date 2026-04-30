@@ -42,9 +42,21 @@ VibeStack tracks the `stable` update channel by default. Platform admins can swi
 
 For production servers, track `stable`. Track `beta` for prerelease validation and `nightly` for development snapshots. Avoid tracking `main` on production servers; `main` is the integration branch for pull requests and may include changes that have not been published as a release.
 
+VibeStack checks database migration compatibility before applying an update. Moving to a channel that contains new migrations is allowed, but the UI recommends taking a backup first. Moving back to an older channel is blocked when the installed database contains migrations that do not exist on the target channel. Restore a backup from before the newer migration, or move to a channel that contains the applied migrations.
+
 For maintainer release workflow details, see [release-process.md](release-process.md).
 
 ## Backup
+
+Platform admins can download a system backup from Settings. The generated archive contains:
+
+- a Postgres dump for the VibeStack database
+- `.env`
+- `docker-compose.yml`
+- `secrets`, when present
+- a backup manifest
+
+Create a system backup before switching to `beta`, `nightly`, or any update that includes database migrations. Store downloaded backups somewhere other than the VibeStack server.
 
 Back up:
 
@@ -74,6 +86,8 @@ sudo tar -czf vibestack-config-data.tgz \
 Store backups somewhere other than the VibeStack server.
 
 ## Restore
+
+Platform admins can restore a VibeStack system backup from Settings by uploading the downloaded archive. Restore replaces the VibeStack database and restores the archived config files. Restart the stack after restore so services reload the restored configuration and database state.
 
 A basic restore flow is:
 

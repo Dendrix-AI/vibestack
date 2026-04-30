@@ -30,6 +30,7 @@ import {
   Square,
   TerminalSquare,
   Trash2,
+  Upload,
   Users,
 } from 'lucide-react';
 import { api, formatApiError } from './api';
@@ -423,6 +424,8 @@ function App() {
             onSave={handleSaveSettings}
             onCheckUpdate={handleCheckUpdate}
             onStartUpdate={handleStartUpdate}
+            onDownloadBackup={handleDownloadBackup}
+            onRestoreBackup={handleRestoreBackup}
           />
         ) : null}
         {view === 'tokens' ? <TokensView tokens={tokens} onCreate={handleCreateToken} onRevoke={handleRevokeToken} /> : null}
@@ -550,6 +553,23 @@ function App() {
 
   async function handleStartUpdate() {
     setSystemUpdate(await api.startSystemUpdate());
+  }
+
+  async function handleDownloadBackup() {
+    const { blob, filename } = await api.downloadSystemBackup();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  }
+
+  async function handleRestoreBackup(file: File): Promise<string> {
+    const restore = await api.restoreSystemBackup(file);
+    return restore.message;
   }
 
   async function handleCreateToken(name: string): Promise<ApiToken> {
@@ -1051,19 +1071,25 @@ function SettingsView({
   update,
   onSave,
   onCheckUpdate,
-  onStartUpdate
+  onStartUpdate,
+  onDownloadBackup,
+  onRestoreBackup
 }: {
   settings: PlatformSettings;
   update?: SystemUpdate;
   onSave: (payload: PlatformSettings) => Promise<void>;
   onCheckUpdate: () => Promise<void>;
   onStartUpdate: () => Promise<void>;
+  onDownloadBackup: () => Promise<void>;
+  onRestoreBackup: (file: File) => Promise<string>;
 }) {
   const [draft, setDraft] = useState<PlatformSettings>(settings);
   const [cloudflareToken, setCloudflareToken] = useState('');
   const [saved, setSaved] = useState(false);
   const [updateBusy, setUpdateBusy] = useState<'check' | 'apply'>();
+  const [backupBusy, setBackupBusy] = useState<'download' | 'restore'>();
   const [error, setError] = useState<string>();
+  const [systemMessage, setSystemMessage] = useState<string>();
 
   useEffect(() => {
     setDraft(settings);
@@ -1103,9 +1129,11 @@ function SettingsView({
   const currentVersionLabel = versionLabel(update?.currentVersion, update?.currentTag, update?.currentRevision);
   const latestVersionLabel = versionLabel(update?.latestVersion, update?.latestTag, update?.latestRevision);
   const selectedChannel = readSetting(draft, 'updateChannel', 'update_channel', update?.channel ?? 'stable');
+  const updateBlocked = Boolean(update?.schema && !update.schema.compatible);
 
   async function checkUpdate() {
     setError(undefined);
+    setSystemMessage(undefined);
     setUpdateBusy('check');
     try {
       await onCheckUpdate();
@@ -1118,6 +1146,7 @@ function SettingsView({
 
   async function startUpdate() {
     setError(undefined);
+    setSystemMessage(undefined);
     setUpdateBusy('apply');
     try {
       await onStartUpdate();
@@ -1125,6 +1154,37 @@ function SettingsView({
       setError(formatApiError(caught));
     } finally {
       setUpdateBusy(undefined);
+    }
+  }
+
+  async function downloadBackup() {
+    setError(undefined);
+    setSystemMessage(undefined);
+    setBackupBusy('download');
+    try {
+      await onDownloadBackup();
+      setSystemMessage('Backup downloaded.');
+    } catch (caught) {
+      setError(formatApiError(caught));
+    } finally {
+      setBackupBusy(undefined);
+    }
+  }
+
+  async function restoreBackup(file?: File, input?: HTMLInputElement) {
+    if (!file) return;
+    const confirmed = window.confirm('Restore this backup? This replaces VibeStack database/configuration state and should be followed by a stack restart.');
+    if (!confirmed) return;
+    setError(undefined);
+    setSystemMessage(undefined);
+    setBackupBusy('restore');
+    try {
+      setSystemMessage(await onRestoreBackup(file));
+    } catch (caught) {
+      setError(formatApiError(caught));
+    } finally {
+      if (input) input.value = '';
+      setBackupBusy(undefined);
     }
   }
 
@@ -1166,17 +1226,33 @@ function SettingsView({
           {updateRunning ? 'updating' : updateAvailable ? 'update available' : update?.sourceAvailable === false ? 'unavailable' : 'up to date'}
         </span>
         {update?.message ? <p className="muted">{update.message}</p> : null}
+        {update?.schema?.message ? <p className={update.schema.compatible ? 'muted' : 'danger-text'}>{update.schema.message}</p> : null}
+        {update?.schema?.backupRecommended ? <p className="muted">Create a backup before applying this update.</p> : null}
         <div className="button-row">
           <button type="button" className="button secondary" onClick={() => void checkUpdate()} disabled={Boolean(updateBusy) || updateRunning}>
             {updateBusy === 'check' ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} Check
           </button>
-          <button type="button" className="button primary" onClick={() => void startUpdate()} disabled={!updateAvailable || Boolean(updateBusy) || updateRunning}>
+          <button type="button" className="button primary" onClick={() => void startUpdate()} disabled={!updateAvailable || updateBlocked || Boolean(updateBusy) || updateRunning}>
             {updateBusy === 'apply' || updateRunning ? <Loader2 className="spin" size={16} /> : <Download size={16} />} {updateRunning ? 'Updating' : 'Update'}
           </button>
         </div>
       </section>
+      <section className="panel">
+        <PanelTitle icon={Download} title="Backup and restore" />
+        <p className="muted">Download a system backup before channel changes or restore a previous VibeStack backup archive.</p>
+        <div className="button-row">
+          <button type="button" className="button secondary" onClick={() => void downloadBackup()} disabled={Boolean(backupBusy)}>
+            {backupBusy === 'download' ? <Loader2 className="spin" size={16} /> : <Download size={16} />} Download backup
+          </button>
+          <label className={`button secondary ${backupBusy ? 'disabled-like' : ''}`}>
+            {backupBusy === 'restore' ? <Loader2 className="spin" size={16} /> : <Upload size={16} />} Restore backup
+            <input type="file" accept=".tar.gz,.tgz,application/gzip" hidden disabled={Boolean(backupBusy)} onChange={(event) => void restoreBackup(event.target.files?.[0], event.currentTarget)} />
+          </label>
+        </div>
+      </section>
       <div className="settings-actions">
         <ErrorBanner message={error} />
+        {systemMessage ? <div className="banner success"><CheckCircle2 size={18} /> {systemMessage}</div> : null}
         {saved ? <div className="banner success"><CheckCircle2 size={18} /> Settings saved</div> : null}
         <button className="button primary"><Settings size={16} /> Save settings</button>
       </div>

@@ -253,6 +253,23 @@ export type SystemUpdate = {
   repoUrl: string;
   channel: string;
   updateMode?: 'version' | 'revision' | string;
+  schema?: {
+    compatible: boolean;
+    currentMigrations: string[];
+    targetMigrations: string[];
+    missingInTarget: string[];
+    pendingInTarget: string[];
+    backupRecommended: boolean;
+    message?: string;
+  };
+};
+
+export type SystemRestore = {
+  restoredDatabase: boolean;
+  restoredEnv: boolean;
+  restoredCompose: boolean;
+  restoredSecrets: boolean;
+  message: string;
 };
 
 export type MeResponse = {
