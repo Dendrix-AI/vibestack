@@ -11,6 +11,8 @@ VibeStack separates repository integration from installable releases.
 
 Do not use release-channel branches as normal pull request targets. They should move only when maintainers intentionally publish a channel update.
 
+If someone names a channel that is not listed here, such as `testing`, first verify that `origin/<channel>` exists and whether project docs identify it as version-tracked or revision-tracked. If the branch does not exist or the tracking policy is unclear, ask whether they mean an existing channel or want a new version-tracked or revision-tracked channel.
+
 ## Versioning
 
 VibeStack uses `vibestackRelease` in the root `package.json` as the product release label shown to installed servers. The regular package `version` fields remain package metadata and must stay aligned across the root package and workspace packages.
@@ -46,6 +48,8 @@ Release pull requests should state:
 - concise change summary
 - validation commands and results
 
+Do not move version-tracked channels from a release-prep branch. They move only after the release pull request is merged and publication is confirmed.
+
 ## Publishing Channels
 
 After the release pull request is merged, publish only when explicitly confirmed.
@@ -57,3 +61,18 @@ For `stable`, move the `stable` branch to the release commit after the release i
 For `nightly`, move the `nightly` branch to the desired development snapshot. This may be current `main`, but it should still be an intentional publication step.
 
 Create or move release tags only when release publication is explicitly confirmed.
+
+## Promoting Channels
+
+Channel promotion moves a branch pointer; it is not a Git merge. This applies to any source and target channel, including `nightly`, `beta`, `stable`, or a future project-specific channel.
+
+When promoting `beta` to `stable`:
+
+1. Fetch current refs from GitHub.
+2. Verify the source branch head, for example `origin/beta`.
+3. Verify the target branch head, for example `origin/stable`.
+4. Confirm the source commit contains the intended `vibestackRelease`.
+5. Push the source commit to the target branch, for example move `stable` to the exact `origin/beta` commit.
+6. Do not create a merge commit between channel branches.
+
+The same rule applies to any channel promotion, such as `nightly` to `beta` or a project-specific `testing` branch to `beta`.
