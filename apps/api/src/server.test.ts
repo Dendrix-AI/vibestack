@@ -83,7 +83,7 @@ describe('gateway external password flow', () => {
     expect(response.body).toContain('Dendrix AI logo');
     expect(response.body).toContain('/api/v1/brand/dendrix-logo.png');
     expect(response.body).toContain('Learn about Dendrix AI');
-    expect(response.body).toContain('https://dendrix.ai');
+    expect(response.body).toContain('https://www.dendrix-ai.com');
     expect(response.body).toContain('background: var(--accent)');
   });
 });
