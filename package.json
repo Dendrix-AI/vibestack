@@ -4,7 +4,7 @@
   "description": "Self-hosted platform for deploying AI-generated web applications.",
   "private": true,
   "author": "Dan Kritzinger",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "workspaces": [
     "apps/*",

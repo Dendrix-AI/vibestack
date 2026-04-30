@@ -110,4 +110,4 @@ This repository is an initial public release. It includes the VibeStack API, wor
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+VibeStack Community Edition is licensed under the GNU Affero General Public License v3.0 or later. See [LICENSE](LICENSE).
