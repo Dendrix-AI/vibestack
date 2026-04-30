@@ -21,6 +21,15 @@ export async function runMigrations(): Promise<void> {
 
     const migrationsDir = path.resolve(dirname, '../migrations');
     const files = (await fs.readdir(migrationsDir)).filter((file) => file.endsWith('.sql')).sort();
+    const knownMigrations = new Set(files);
+    const applied = await db.query<{ name: string }>('SELECT name FROM schema_migrations ORDER BY name');
+    const unsupported = applied.rows.map((row) => row.name).filter((name) => !knownMigrations.has(name));
+    if (unsupported.length > 0) {
+      throw new Error(
+        `Database schema is newer than this VibeStack build. Unsupported migrations: ${unsupported.join(', ')}`
+      );
+    }
+
     for (const file of files) {
       const existing = await db.maybeOne<{ name: string }>('SELECT name FROM schema_migrations WHERE name = $1', [file]);
       if (existing) {

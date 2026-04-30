@@ -16,10 +16,13 @@
 - `beta` is a version-tracked prerelease channel for broader testing before stable.
 - `nightly` is a revision-tracked test channel and may move whenever a new development snapshot is intentionally published.
 - `main` is for repository integration and developer testing. It is not the default installed-user update channel.
+- Database migrations are append-only once they have shipped on a public channel. Do not rename, remove, or rewrite a migration that may already have been applied by a user.
+- Channel-switching must remain schema-safe. If a change adds migrations, preserve the compatibility checks and downgrade guard, update docs, and recommend a backup before users move across channels.
 
 ## Release Work
 
 - When asked to release to any version-tracked channel, such as `stable` or `beta`, create a release-prep branch such as `codex/release-0.2b`, bump `vibestackRelease`, the root package version, and all workspace package versions together, then open a pull request against `main`.
+- When asked for a versioned `nightly` release, still create a release-prep branch and pull request against `main`; after merge and explicit publication confirmation, move `nightly` to the merged commit.
 - Do not move version-tracked channels before the release pull request is merged.
 - Release pull requests must include the intended version, target channel, concise change summary, and validation commands that were run.
 - After a release PR is merged, publish the requested channel only when release publication is explicitly confirmed. Publishing means moving the channel branch to the merged release commit and, when requested, creating the release tag.

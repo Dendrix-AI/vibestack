@@ -53,9 +53,20 @@ button:disabled {
   opacity: 0.54;
 }
 
+.disabled-like {
+  cursor: not-allowed;
+  opacity: 0.54;
+  pointer-events: none;
+}
+
 a {
   color: var(--accent-dark);
   overflow-wrap: anywhere;
+}
+
+.danger-text {
+  color: var(--bad);
+  font-weight: 700;
 }
 
 code {

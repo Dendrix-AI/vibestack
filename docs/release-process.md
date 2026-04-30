@@ -24,6 +24,19 @@ Update behavior:
 - `stable` and `beta` are version-tracked. VibeStack offers an update when the branch's `vibestackRelease` changes.
 - `nightly` and `main` are revision-tracked. VibeStack offers an update when the tracked branch commit changes.
 
+## Database Compatibility
+
+Database migrations are append-only after they ship on a public channel. Do not rewrite, rename, or delete a migration that a user may already have applied.
+
+Installed servers compare their applied migrations with the target channel before updating. If the target channel lacks an already-applied migration, the update is blocked because that is a schema downgrade. If the target contains pending migrations, the update can proceed but users should take a backup first.
+
+When a release or channel promotion includes migrations:
+
+- mention the migration in the pull request summary
+- validate update checks still report schema compatibility
+- keep the migration on every channel that might receive users from the newer channel
+- document any restore or rollback caveats
+
 ## Normal Development
 
 1. Start from current `main`.

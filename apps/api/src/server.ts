@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
-import { createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import Fastify from 'fastify';
@@ -40,6 +41,8 @@ import {
 } from './deployment/runtime.js';
 import { publicCloudflareSetting } from './cloudflare.js';
 import { getSelfUpdateStatus, startSelfUpdate } from './updater.js';
+import { schemaCompatibilityForRef } from './schema-compatibility.js';
+import { createSystemBackup, restoreSystemBackup } from './system-backup.js';
 
 type AppContext = {
   config: Config;
@@ -428,6 +431,18 @@ const DeploymentQuery = z.object({ limit: z.coerce.number().int().min(1).max(100
 const LogQuery = z.object({ tail: z.coerce.number().int().min(1).max(1000).default(200) });
 const UpdateQuery = z.object({ refresh: z.string().optional() });
 type DeployAppMetadataValue = z.infer<typeof DeployAppMetadata>;
+
+function updateRef(channel: string): string {
+  return `origin/${channel}`;
+}
+
+async function updateStatusWithSchema(db: Db, config: Config, refresh: boolean, channel: string) {
+  const update = await getSelfUpdateStatus(config, refresh, channel);
+  if (!update.latestRevision) return update;
+
+  const schema = await schemaCompatibilityForRef(db, config, updateRef(channel));
+  return { ...update, schema };
+}
 
 function appPasswordCookieName(appId: string): string {
   return `vibestack_app_${appId.replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -977,7 +992,7 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
     requirePlatformAdmin(actor);
     const query = parseQuery(UpdateQuery, request);
     const channel = await currentUpdateChannel(db, config);
-    return { update: await getSelfUpdateStatus(config, query.refresh === 'true' || query.refresh === '1', channel) };
+    return { update: await updateStatusWithSchema(db, config, query.refresh === 'true' || query.refresh === '1', channel) };
   });
 
   app.post('/api/v1/system/update', async (request, reply) => {
@@ -985,6 +1000,15 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
     requirePlatformAdmin(actor);
     try {
       const channel = await currentUpdateChannel(db, config);
+      const current = await updateStatusWithSchema(db, config, true, channel);
+      if ('schema' in current && current.schema && !current.schema.compatible) {
+        throw new HttpError({
+          code: 'INCOMPATIBLE_DATABASE_SCHEMA',
+          message: current.schema.message ?? 'The selected update channel is not compatible with the current database schema.',
+          statusCode: 409,
+          agentHint: 'Choose a channel that contains all applied migrations, or restore a backup before downgrading.'
+        });
+      }
       const update = await startSelfUpdate(config, channel);
       await writeAuditLog(db, {
         actor,
@@ -999,8 +1023,61 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       });
       return reply.status(202).send({ update });
     } catch (error) {
+      if (error instanceof HttpError) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : 'Unable to start update.';
       throw new HttpError({ code: 'UPDATE_FAILED', message, statusCode: 400 });
+    }
+  });
+
+  app.get('/api/v1/system/backup', async (request, reply) => {
+    const actor = await requireActor(db, request);
+    requirePlatformAdmin(actor);
+    const backup = await createSystemBackup(config);
+    await writeAuditLog(db, { actor, action: 'system.backup_created', targetType: 'system', sourceIp: clientIp(request), metadata: { filename: backup.filename } });
+    const stream = createReadStream(backup.path);
+    stream.on('close', () => void backup.cleanup());
+    return reply
+      .header('Content-Type', 'application/gzip')
+      .header('Content-Disposition', `attachment; filename="${backup.filename}"`)
+      .send(stream);
+  });
+
+  app.post('/api/v1/system/restore', async (request) => {
+    const actor = await requireActor(db, request);
+    requirePlatformAdmin(actor);
+    if (!request.isMultipart()) {
+      throw new HttpError({ code: 'INVALID_RESTORE_UPLOAD', message: 'Restore requires a multipart backup archive upload.', statusCode: 400 });
+    }
+
+    const uploadDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vibestack-restore-upload-'));
+    const archivePath = path.join(uploadDir, 'backup.tar.gz');
+    let confirmed = false;
+    let uploaded = false;
+    try {
+      for await (const part of request.parts()) {
+        if (part.type === 'field' && part.fieldname === 'confirm') {
+          confirmed = part.value === 'restore';
+        }
+        if (part.type === 'file' && part.fieldname === 'backup') {
+          await pipeline(part.file, createWriteStream(archivePath));
+          uploaded = true;
+        }
+      }
+
+      if (!confirmed) {
+        throw new HttpError({ code: 'RESTORE_NOT_CONFIRMED', message: 'Restore requires confirmation.', statusCode: 400 });
+      }
+      if (!uploaded) {
+        throw new HttpError({ code: 'MISSING_BACKUP_ARCHIVE', message: 'No backup archive was uploaded.', statusCode: 400 });
+      }
+
+      const restore = await restoreSystemBackup(config, archivePath);
+      await writeAuditLog(db, { actorType: 'system', action: 'system.backup_restored', targetType: 'system', sourceIp: clientIp(request), metadata: restore });
+      return { restore };
+    } finally {
+      await fs.rm(uploadDir, { recursive: true, force: true });
     }
   });
 
@@ -1528,7 +1605,7 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   });
   await app.register(cookie, { secret: ctx.config.sessionSecret });
   await app.register(cors, { origin: true, credentials: true });
-  await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024, files: 1 } });
+  await app.register(multipart, { limits: { fileSize: 1024 * 1024 * 1024, files: 1 } });
   await app.register(swagger, {
     openapi: {
       info: { title: 'VibeStack API', version: '0.1.0' },
