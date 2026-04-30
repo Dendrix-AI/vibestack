@@ -10,7 +10,7 @@ This is a practical project CLA, not legal advice. Contributors and organization
 
 "Contribution" means any code, documentation, design, text, issue content, pull request, patch, or other material you submit to the VibeStack project.
 
-"Project Maintainer" means Dan Kritzinger and any legal entity or project organization that Dan Kritzinger designates to maintain VibeStack.
+"Project Maintainer" means Dendrix AI and any legal entity or project organization that Dendrix AI designates to maintain VibeStack.
 
 ## Copyright Ownership
 
@@ -47,4 +47,3 @@ Your contribution is provided without warranty of any kind unless separately agr
 ## Acceptance
 
 Unless another written process is adopted, submitting a pull request or patch to this repository indicates acceptance of this Agreement for that contribution.
-

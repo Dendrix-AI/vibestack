@@ -15,14 +15,14 @@ Creators should not be exposed to Git, Docker, Traefik, Cloudflare, or build-sys
 
 If the user asks to update, refresh, or reinstall the VibeStack deployment skill, fetch the latest skill from:
 
-<https://github.com/dankritz/vibestack/tree/main/skills/deploy-to-vibestack>
+<https://github.com/Dendrix-AI/vibestack/tree/main/skills/deploy-to-vibestack>
 
 Update only the installed user-level skill copy, not the current app repository. Preserve user-level VibeStack config and credentials such as `~/.config/vibestack/deploy.json`, `~/.config/vibestack/credentials.json`, `~/.vibestack/deploy.json`, and `~/.vibestack/credentials.json`.
 
 Preferred update flow:
 
 1. Locate the installed skill directory that contains this `SKILL.md`.
-2. Download or clone `https://github.com/dankritz/vibestack`.
+2. Download or clone `https://github.com/Dendrix-AI/vibestack`.
 3. Replace the installed skill directory with `skills/deploy-to-vibestack` from the downloaded repository.
 4. Verify the installed copy contains `SKILL.md`, `scripts/vibestack_deploy.py`, `references/api.md`, and `references/manifest.md`.
 5. Do not deploy any app as part of a skill update unless the user explicitly asks for deployment afterward.

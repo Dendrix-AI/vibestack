@@ -3,7 +3,7 @@
   "version": "0.2.0-alpha.0",
   "description": "Self-hosted platform for deploying AI-generated web applications.",
   "private": true,
-  "author": "Dan Kritzinger",
+  "author": "Dendrix AI",
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "workspaces": [

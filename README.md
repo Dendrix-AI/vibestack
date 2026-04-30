@@ -70,7 +70,7 @@ Do not ask for an app name yet. This skill should be reusable for many different
 If I provide an API token, do not print it back to me. Do not commit it. Do not store it in any app repository. If Claude Code has a secure local user-level secrets mechanism, use that; otherwise tell me that you will ask for the token at deployment time.
 
 Then install the VibeStack deployment skill for Claude Code:
-1. Fetch https://github.com/dankritz/vibestack
+1. Fetch https://github.com/Dendrix-AI/vibestack
 2. Copy the repository folder `skills/deploy-to-vibestack` into the local Claude Code skills directory as `deploy-to-vibestack`.
 3. If you are not sure where Claude Code skills are installed on this machine, inspect the local Claude Code configuration and ask me before writing files.
 4. Verify that the installed skill contains `SKILL.md`, `scripts/vibestack_deploy.py`, `references/api.md`, and `references/manifest.md`.

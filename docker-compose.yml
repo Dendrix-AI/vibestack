@@ -72,7 +72,7 @@ services:
       VIBESTACK_COOKIE_DOMAIN: ${VIBESTACK_COOKIE_DOMAIN:-}
       VIBESTACK_INSTALL_DIR: ${VIBESTACK_INSTALL_DIR:-/opt/vibestack}
       VIBESTACK_SOURCE_DIR: /opt/vibestack-source
-      VIBESTACK_REPO_URL: ${VIBESTACK_REPO_URL:-https://github.com/dankritz/vibestack.git}
+      VIBESTACK_REPO_URL: ${VIBESTACK_REPO_URL:-https://github.com/Dendrix-AI/vibestack.git}
       VIBESTACK_UPDATE_CHANNEL: ${VIBESTACK_UPDATE_CHANNEL:-main}
       VIBESTACK_DATA_DIR: /var/lib/vibestack
       VIBESTACK_SESSION_SECRET: ${VIBESTACK_SESSION_SECRET:?VIBESTACK_SESSION_SECRET is required}

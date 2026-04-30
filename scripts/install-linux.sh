@@ -2,7 +2,7 @@
 set -euo pipefail
 trap 'echo "VibeStack installer failed near line ${LINENO}. See the message above for details." >&2' ERR
 
-REPO_URL="https://github.com/dankritz/vibestack.git"
+REPO_URL="https://github.com/Dendrix-AI/vibestack.git"
 INSTALL_DIR="/opt/vibestack"
 BASE_DOMAIN="${VIBESTACK_BASE_DOMAIN:-}"
 VIBESTACK_HOST="${VIBESTACK_HOST:-}"
@@ -36,7 +36,7 @@ Optional flags:
   --dashboard-user USER        Traefik dashboard basic-auth user. Default: admin
   --dashboard-password PASS    Traefik dashboard password. Prompts on a TTY, generates otherwise.
   --install-dir DIR            Install directory. Default: /opt/vibestack
-  --repo-url URL               Git repository URL. Default: https://github.com/dankritz/vibestack.git
+  --repo-url URL               Git repository URL. Default: https://github.com/Dendrix-AI/vibestack.git
   --skip-dns-check             Do not fail if host DNS does not point at this server yet
   -h, --help                   Show this help
 

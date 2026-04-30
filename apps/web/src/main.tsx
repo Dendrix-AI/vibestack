@@ -600,7 +600,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: User, teams: Team[]) => void
         <form className="login-form" onSubmit={submit}>
           <label>
             Email
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="dan@example.com" required />
+            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="admin@example.com" required />
           </label>
           <label>
             Password

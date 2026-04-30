@@ -8,7 +8,7 @@ const ConfigSchema = z.object({
   cookieDomain: z.string().min(1).optional(),
   installDir: z.string().min(1).default('/opt/vibestack'),
   sourceDir: z.string().min(1).default('/opt/vibestack-source'),
-  repoUrl: z.string().min(1).default('https://github.com/dankritz/vibestack.git'),
+  repoUrl: z.string().min(1).default('https://github.com/Dendrix-AI/vibestack.git'),
   updateChannel: z.string().min(1).default('main'),
   dataDir: z.string().min(1).default('.vibestack-data'),
   sessionSecret: z.string().min(16).default('change-me-session-secret'),
