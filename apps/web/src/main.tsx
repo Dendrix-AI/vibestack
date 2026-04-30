@@ -6,6 +6,7 @@ import {
   AppWindow,
   BookOpen,
   CheckCircle2,
+  ClipboardList,
   Clock3,
   Cloud,
   Copy,
@@ -49,7 +50,7 @@ import type {
 } from './types';
 import './styles.css';
 
-type View = 'apps' | 'users' | 'teams' | 'settings' | 'tokens' | 'audit';
+type View = 'apps' | 'users' | 'teams' | 'settings' | 'tokens' | 'onboarding' | 'audit';
 
 type DetailState = {
   deployments: Deployment[];
@@ -352,6 +353,9 @@ function App() {
           <button className={view === 'tokens' ? 'active' : ''} onClick={() => setView('tokens')} disabled={!isAdmin(user)}>
             <KeyRound size={18} /> API tokens
           </button>
+          <button className={view === 'onboarding' ? 'active' : ''} onClick={() => setView('onboarding')} disabled={!isAdmin(user)}>
+            <ClipboardList size={18} /> Onboarding
+          </button>
           <button className={view === 'audit' ? 'active' : ''} onClick={() => setView('audit')} disabled={!isAdmin(user)}>
             <BookOpen size={18} /> Audit logs
           </button>
@@ -420,6 +424,7 @@ function App() {
           />
         ) : null}
         {view === 'tokens' ? <TokensView tokens={tokens} onCreate={handleCreateToken} onRevoke={handleRevokeToken} /> : null}
+        {view === 'onboarding' ? <OnboardingView teams={teams} settings={settings} /> : null}
         {view === 'audit' ? <AuditView logs={auditLogs} /> : null}
       </main>
     </div>
@@ -1246,6 +1251,88 @@ function TokensView({ tokens, onCreate, onRevoke }: { tokens: ApiToken[]; onCrea
   );
 }
 
+function OnboardingView({ teams, settings }: { teams: Team[]; settings: PlatformSettings }) {
+  const baseDomain = readSetting(settings, 'baseDomain', 'base_domain', '');
+  const defaultAccessMode = readSetting(settings, 'defaultAppAccessMode', 'default_app_access_mode', readSetting(settings, 'defaultAccessMode', 'default_access_mode', 'login'));
+  const [apiUrl, setApiUrl] = useState(window.location.origin);
+  const [appDomain, setAppDomain] = useState(baseDomain);
+  const [teamSlug, setTeamSlug] = useState(teams[0]?.slug ?? '');
+  const [accessMode, setAccessMode] = useState(defaultAccessMode);
+  const [postgresDefault, setPostgresDefault] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setAppDomain((current) => current || baseDomain);
+  }, [baseDomain]);
+
+  useEffect(() => {
+    setTeamSlug((current) => current || teams[0]?.slug || '');
+  }, [teams]);
+
+  const accessText = accessMode === 'password'
+    ? 'external-password access'
+    : accessMode === 'private'
+      ? 'private access'
+      : 'VibeStack login access';
+
+  const prompt = useMemo(() => `I want you to install the reusable VibeStack deployment skill in Claude Code.
+
+Use these defaults:
+- VibeStack API URL: ${apiUrl || 'https://vibestack.example.com'}
+- Hosted app base domain: ${appDomain || 'apps.example.com'}
+- Default team slug: ${teamSlug || 'team-slug'}
+- Default access mode: ${accessText}
+- Default database behavior: ${postgresDefault ? 'enable VibeStack-managed Postgres for new apps' : 'no Postgres unless I explicitly ask for persistent structured data'}
+
+Ask me for my VibeStack API token. Do not print the token back to me. Do not commit it. Do not store it in any app repository. If Claude Code has a secure local user-level secrets mechanism, use that; otherwise store it in a user-level config file with permissions set to 0600.
+
+Then install the VibeStack deployment skill:
+1. Fetch https://github.com/Dendrix-AI/vibestack.
+2. Copy skills/deploy-to-vibestack into the local Claude Code skills directory as deploy-to-vibestack.
+3. Verify the installed skill contains SKILL.md, scripts/vibestack_deploy.py, references/api.md, and references/manifest.md.
+4. Create ~/.config/vibestack/deploy.json with the defaults above.
+5. Store credentials only in a user-level credentials file or secure local secrets store.
+6. Do not deploy the current app unless I explicitly ask you to.
+
+After setup, explain that I can deploy any future app by opening that app in Claude Code and saying: "Deploy this app to VibeStack."`, [accessText, apiUrl, appDomain, postgresDefault, teamSlug]);
+
+  async function copyPrompt() {
+    await navigator.clipboard.writeText(prompt);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  return (
+    <section className="admin-grid">
+      <div className="panel">
+        <PanelTitle icon={ClipboardList} title="Creator handoff" />
+        <form className="stack-form">
+          <label>Management URL<input value={apiUrl} onChange={(event) => setApiUrl(event.target.value)} /></label>
+          <label>Hosted app base domain<input value={appDomain} onChange={(event) => setAppDomain(event.target.value)} placeholder="apps.example.com" /></label>
+          <label>Team slug<select value={teamSlug} onChange={(event) => setTeamSlug(event.target.value)}>
+            <option value="">Select team</option>
+            {teams.map((team) => <option key={team.id} value={team.slug}>{team.name} / {team.slug}</option>)}
+          </select></label>
+          <label>Default access<select value={accessMode} onChange={(event) => setAccessMode(event.target.value)}>
+            <option value="login">Logged-in users</option>
+            <option value="password">External password</option>
+            <option value="private">Private</option>
+          </select></label>
+          <label className="toggle compact"><input type="checkbox" checked={postgresDefault} onChange={(event) => setPostgresDefault(event.target.checked)} /> Default Postgres</label>
+          <button type="button" className="button primary" onClick={() => void copyPrompt()}>
+            {copied ? <CheckCircle2 size={16} /> : <Copy size={16} />} {copied ? 'Copied' : 'Copy prompt'}
+          </button>
+        </form>
+      </div>
+
+      <div className="panel admin-main">
+        <PanelTitle icon={TerminalSquare} title="Claude Code setup prompt" />
+        <textarea className="prompt-preview" value={prompt} readOnly />
+      </div>
+    </section>
+  );
+}
+
 function AuditView({ logs }: { logs: AuditLog[] }) {
   return (
     <section className="panel">
@@ -1331,6 +1418,8 @@ function viewTitle(view: View): string {
       return 'Platform settings';
     case 'tokens':
       return 'API tokens';
+    case 'onboarding':
+      return 'Creator onboarding';
     case 'audit':
       return 'Audit logs';
   }
