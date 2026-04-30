@@ -16,6 +16,7 @@
 - `beta` is a version-tracked prerelease channel for broader testing before stable.
 - `nightly` is a revision-tracked test channel and may move whenever a new development snapshot is intentionally published.
 - `main` is for repository integration and developer testing. It is not the default installed-user update channel.
+- Release-channel branches are protected. Only an authorized maintainer should move `stable`, `beta`, or `nightly`; do not try to bypass branch protection.
 - Database migrations are append-only once they have shipped on a public channel. Do not rename, remove, or rewrite a migration that may already have been applied by a user.
 - Channel-switching must remain schema-safe. If a change adds migrations, preserve the compatibility checks and downgrade guard, update docs, and recommend a backup before users move across channels.
 
@@ -28,5 +29,6 @@
 - After a release PR is merged, publish the requested channel only when release publication is explicitly confirmed. Publishing means moving the channel branch to the merged release commit and, when requested, creating the release tag.
 - When asked to publish or release any revision-tracked channel, such as `nightly`, do not bump `vibestackRelease` unless the user explicitly asks for a versioned release. Move the requested channel to the requested commit or to current `main` after confirming the target commit.
 - When asked to promote one channel to another, for example `nightly` to `beta` or `beta` to `stable`, verify both branch heads and move the target channel branch to the exact source channel commit. Do not create a merge commit between channel branches.
+- Because channel branches are protected against force pushes, publish and promote channels by fast-forwarding them to commits that descend from the current channel head. If a rollback or non-fast-forward move is required, stop and ask the maintainer to explicitly approve the temporary branch-protection change and rollback target.
 - If the user names an unrecognized channel such as `testing`, first check whether `origin/<channel>` exists and whether docs identify it as version-tracked or revision-tracked. If it does not exist or its tracking policy is unclear, ask whether they mean an existing channel or want a new version-tracked or revision-tracked channel.
 - Never move `stable`, `beta`, or `nightly` as part of an ordinary feature PR.

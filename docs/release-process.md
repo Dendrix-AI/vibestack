@@ -11,6 +11,8 @@ VibeStack separates repository integration from installable releases.
 
 Do not use release-channel branches as normal pull request targets. They should move only when maintainers intentionally publish a channel update.
 
+Release-channel branches are protected. Currently only the maintainer account `dankritz` may move `stable`, `beta`, or `nightly`; force pushes and branch deletion are disabled. As more maintainers are onboarded, add them or a release automation app to the branch protection allowlist rather than weakening the channel protections.
+
 If someone names a channel that is not listed here, such as `testing`, first verify that `origin/<channel>` exists and whether project docs identify it as version-tracked or revision-tracked. If the branch does not exist or the tracking policy is unclear, ask whether they mean an existing channel or want a new version-tracked or revision-tracked channel.
 
 ## Versioning
@@ -66,6 +68,8 @@ Do not move version-tracked channels from a release-prep branch. They move only 
 ## Publishing Channels
 
 After the release pull request is merged, publish only when explicitly confirmed.
+
+Publish channels with fast-forward moves only. If a channel must be rolled back or moved to a commit that does not descend from the current channel head, treat that as an exceptional recovery operation: identify the exact rollback target, temporarily adjust branch protection only after explicit maintainer approval, move the branch, and restore protection immediately.
 
 For `beta`, move the `beta` branch to the validated release commit.
 
