@@ -108,6 +108,10 @@ The Cloudflare token must be able to edit DNS records in the zone used by the ho
 
 This repository is an initial public release. It includes the VibeStack API, worker, web app, shared package, deployment skill, and sample application fixtures. APIs and operational behavior may change before a 1.0 release.
 
+## Contributing
+
+Community contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution licensing, CLA, and DCO sign-off details.
+
 ## License
 
 VibeStack Community Edition is licensed under the GNU Affero General Public License v3.0 or later. See [LICENSE](LICENSE).
