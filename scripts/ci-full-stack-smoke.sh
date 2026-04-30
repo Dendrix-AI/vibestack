@@ -132,12 +132,20 @@ APP_HOST="${APP_HOST#http://}"
 APP_HOST="${APP_HOST%%/*}"
 
 echo "Verifying deployed app through Traefik at ${APP_HOST}"
-APP_RESPONSE="$(
-  curl -fsS -k \
-    --resolve "${APP_HOST}:8443:127.0.0.1" \
-    -H "Cookie: vibestack_session=${SESSION_COOKIE}" \
-    "https://${APP_HOST}:8443/"
-)"
+APP_RESPONSE=""
+APP_DEADLINE=$((SECONDS + 90))
+while (( SECONDS < APP_DEADLINE )); do
+  APP_RESPONSE="$(
+    curl -sS -k \
+      --resolve "${APP_HOST}:8443:127.0.0.1" \
+      -H "Cookie: vibestack_session=${SESSION_COOKIE}" \
+      "https://${APP_HOST}:8443/" || true
+  )"
+  if printf '%s' "$APP_RESPONSE" | json_field 'data.ok' >/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
 printf '%s' "$APP_RESPONSE" | json_field 'data.ok' >/dev/null
 printf '%s' "$APP_RESPONSE" | json_field 'data.app' | grep -qx 'vibestack-node-basic'
 
