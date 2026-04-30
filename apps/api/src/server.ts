@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
@@ -48,6 +49,8 @@ type AppContext = {
   config: Config;
   db: Db;
 };
+
+const serverDir = path.dirname(fileURLToPath(import.meta.url));
 
 function parseBody<T>(schema: ZodSchema<T>, request: FastifyRequest): T {
   return schema.parse(request.body ?? {});
@@ -509,8 +512,27 @@ function appPasswordNextUrl(appRow: AppRow, next?: string): string {
   return `https://${appRow.hostname}/`;
 }
 
+async function brandLogoPath(config: Config): Promise<string | undefined> {
+  const candidates = [
+    path.join(config.sourceDir, 'apps/web/src/assets/dendrix-logo.png'),
+    path.resolve(serverDir, '../../web/src/assets/dendrix-logo.png')
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // Try the next known repo layout.
+    }
+  }
+
+  return undefined;
+}
+
 function appPasswordPage(config: Config, appRow: AppRow, next: string, error?: string): string {
   const action = `${config.publicUrl.replace(/\/$/, '')}/api/v1/gateway/apps/${appRow.id}/password`;
+  const logoUrl = `${config.publicUrl.replace(/\/$/, '')}/api/v1/brand/dendrix-logo.png`;
   const title = `Access ${appRow.name}`;
   return `<!doctype html>
 <html lang="en">
@@ -519,33 +541,71 @@ function appPasswordPage(config: Config, appRow: AppRow, next: string, error?: s
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${htmlEscape(title)}</title>
     <style>
-      :root { color: #17202a; background: #edf1f5; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap");
+      :root {
+        color: #1f2a52;
+        background: #f4f7fb;
+        font-family: "Manrope", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+        --bg: #f4f7fb;
+        --surface: #ffffff;
+        --surface-blue: #e9f1ff;
+        --text: #1f2a52;
+        --ink: #102039;
+        --ink-strong: #081425;
+        --muted: #59647f;
+        --border: #d9e2ef;
+        --accent: #2c69f1;
+        --accent-dark: #294ca2;
+        --bad: #bd3f38;
+        --font-display: "Space Grotesk", "Segoe UI", sans-serif;
+      }
       * { box-sizing: border-box; }
-      body { align-items: center; display: flex; justify-content: center; margin: 0; min-height: 100vh; padding: 24px; }
-      main { background: white; border: 1px solid #d7dee8; border-radius: 8px; box-shadow: 0 16px 40px rgb(28 39 49 / 10%); display: grid; gap: 18px; max-width: 420px; padding: 28px; width: 100%; }
-      h1 { font-size: 1.6rem; line-height: 1.1; margin: 0; }
-      p { color: #657182; margin: 0; }
+      body { align-items: center; background: var(--bg); display: flex; justify-content: center; margin: 0; min-height: 100vh; padding: 24px; }
+      main { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 20px 50px -35px rgb(8 20 37 / 45%); display: grid; gap: 20px; max-width: 460px; padding: 30px; width: 100%; }
+      h1 { color: var(--ink); font-family: var(--font-display); font-size: 1.7rem; line-height: 1.1; margin: 0; }
+      p { color: var(--muted); line-height: 1.5; margin: 0; }
+      a { color: var(--accent-dark); font-weight: 800; text-decoration: none; }
+      a:hover { text-decoration: underline; }
       form { display: grid; gap: 14px; }
+      .brand { align-items: center; display: flex; gap: 12px; }
+      .brand img { background: #ffffff; border: 1px solid rgb(100 157 242 / 45%); border-radius: 8px; display: block; height: 46px; object-fit: contain; padding: 4px; width: 46px; }
+      .brand strong { color: var(--ink); display: block; font-family: var(--font-display); font-size: 1.18rem; line-height: 1.1; }
+      .brand span { color: var(--muted); display: block; font-size: 0.92rem; line-height: 1.35; }
+      .eyebrow { color: var(--accent-dark); font-size: 0.76rem; font-weight: 800; letter-spacing: 0; text-transform: uppercase; }
+      .intro { display: grid; gap: 8px; }
       label { display: grid; gap: 7px; font-weight: 700; }
-      input { border: 1px solid #b9c4d1; border-radius: 7px; font: inherit; min-height: 44px; padding: 0 12px; }
-      button { align-items: center; background: #0f7b6c; border: 0; border-radius: 7px; color: white; cursor: pointer; display: inline-flex; font: inherit; font-weight: 800; justify-content: center; min-height: 44px; padding: 0 16px; }
-      .error { background: #fff0f0; border: 1px solid #ffc1bd; border-radius: 7px; color: #9f2720; padding: 10px 12px; }
-      code { background: #eef3f6; border: 1px solid #d7dee8; border-radius: 5px; color: #2e4e62; padding: 2px 6px; word-break: break-all; }
+      input { border: 1px solid var(--border); border-radius: 7px; color: var(--text); font: inherit; min-height: 48px; padding: 0 12px; }
+      input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgb(44 105 241 / 16%); outline: none; }
+      button { align-items: center; background: var(--accent); border: 0; border-radius: 7px; color: white; cursor: pointer; display: inline-flex; font: inherit; font-weight: 800; justify-content: center; min-height: 48px; padding: 0 16px; }
+      button:hover { background: var(--accent-dark); }
+      .error { background: #fff2f0; border: 1px solid #ffc1bd; border-radius: 7px; color: var(--bad); padding: 10px 12px; }
+      code { background: var(--surface-blue); border: 1px solid var(--border); border-radius: 5px; color: var(--ink); padding: 2px 6px; word-break: break-all; }
+      .host { margin-top: 2px; }
+      .footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 0.92rem; padding-top: 2px; }
     </style>
   </head>
   <body>
     <main>
-      <div>
-        <p>VibeStack protected app</p>
-        <h1>${htmlEscape(title)}</h1>
+      <div class="brand">
+        <img src="${htmlEscape(logoUrl)}" alt="Dendrix AI logo" />
+        <div>
+          <strong>VibeStack</strong>
+          <span>by Dendrix AI</span>
+        </div>
       </div>
-      <p><code>${htmlEscape(appRow.hostname)}</code></p>
+      <div class="intro">
+        <p class="eyebrow">Dendrix AI protected app</p>
+        <h1>${htmlEscape(title)}</h1>
+        <p>This app is protected by VibeStack, the Dendrix AI platform for deploying and governing internal apps.</p>
+      </div>
+      <p class="host"><code>${htmlEscape(appRow.hostname)}</code></p>
       ${error ? `<div class="error">${htmlEscape(error)}</div>` : ''}
       <form method="post" action="${htmlEscape(action)}">
         <input type="hidden" name="next" value="${htmlEscape(next)}" />
         <label>App password<input name="password" type="password" autocomplete="current-password" autofocus required /></label>
         <button type="submit">Continue</button>
       </form>
+      <p class="footer"><a href="https://dendrix.ai" rel="noopener noreferrer">Learn about Dendrix AI</a></p>
     </main>
   </body>
 </html>`;
@@ -556,6 +616,17 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
 
   app.get('/health', async () => ({ ok: true }));
   app.get('/api/v1/health', async () => ({ ok: true }));
+  app.get('/api/v1/brand/dendrix-logo.png', async (_request, reply) => {
+    const logoPath = await brandLogoPath(config);
+    if (!logoPath) {
+      throw notFound('Dendrix AI logo asset was not found.');
+    }
+
+    return reply
+      .header('Cache-Control', 'public, max-age=86400')
+      .type('image/png')
+      .send(createReadStream(logoPath));
+  });
 
   app.post('/api/v1/auth/login', async (request, reply) => {
     const body = parseBody(LoginBody, request);

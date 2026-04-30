@@ -70,6 +70,22 @@ describe('gateway external password flow', () => {
     expect(response.headers.location).toBe(next);
     expect(response.headers['set-cookie']).toContain('Domain=example.com');
   });
+
+  it('renders a branded external password page', async () => {
+    const server = await testServer({ ...appRow, external_password_hash: await hashPassword('external-pass') });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: `/api/v1/gateway/apps/${appId}/password?next=${encodeURIComponent(`https://${appRow.hostname}/reports`)}`
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('Dendrix AI logo');
+    expect(response.body).toContain('/api/v1/brand/dendrix-logo.png');
+    expect(response.body).toContain('Learn about Dendrix AI');
+    expect(response.body).toContain('https://dendrix.ai');
+    expect(response.body).toContain('background: var(--accent)');
+  });
 });
 
 describe('deployment response serialization', () => {
