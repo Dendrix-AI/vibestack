@@ -691,9 +691,9 @@ def deploy(args: argparse.Namespace) -> None:
             print(json.dumps(status.get("error") or status, indent=2))
             app_id = status.get("appId") or (status.get("app") or {}).get("id") or created.get("appId") or args.app_id
             if app_id:
-                doctor = fetch_doctor(endpoint, args.token, str(app_id), args.insecure_tls, args.diagnostics_tail)
-                if doctor:
-                    print_doctor_guidance(doctor)
+                doctor_packet = fetch_doctor(endpoint, args.token, str(app_id), args.insecure_tls, args.diagnostics_tail)
+                if doctor_packet:
+                    print_doctor_guidance(doctor_packet)
             raise SystemExit(1)
 
         time.sleep(args.poll_interval)

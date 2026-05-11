@@ -258,6 +258,34 @@ class DeployHelperDryRunTest(unittest.TestCase):
         self.assertEqual(calls, ["https://vibestack.local.test/api/v1/apps/app-1/doctor?tail=25"])
         self.assertIn('"rootCauseCategory": "missing_health_route"', output.getvalue())
 
+    def test_deploy_dispatches_doctor_without_local_shadowing(self) -> None:
+        module = load_helper_module()
+        calls: list[str] = []
+
+        def fake_http_json(method, url, token, body=None, content_type=None, insecure_tls=False):
+            calls.append(url)
+            return {"doctor": {"summary": "health route is missing", "rootCauseCategory": "missing_health_route"}}
+
+        module.http_json = fake_http_json
+        args = module.build_parser().parse_args(
+            [
+                "--doctor",
+                "--api-url",
+                "https://vibestack.local.test",
+                "--token",
+                "test-token",
+                "--app-id",
+                "app-1",
+            ]
+        )
+
+        output = StringIO()
+        with redirect_stdout(output):
+            module.deploy(args)
+
+        self.assertEqual(calls, ["https://vibestack.local.test/api/v1/apps/app-1/doctor?tail=300"])
+        self.assertIn('"summary": "health route is missing"', output.getvalue())
+
     def test_print_doctor_guidance_prefers_ai_enhancement(self) -> None:
         module = load_helper_module()
         output = StringIO()
