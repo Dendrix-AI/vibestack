@@ -13,6 +13,7 @@ export type DoctorRootCause =
   | 'build_failure'
   | 'container_start_failure'
   | 'health_check_failure'
+  | 'healthy'
   | 'unknown';
 
 export type DoctorEvidence = {
@@ -124,11 +125,15 @@ async function getStoredOpenRouterSetting(db: Db): Promise<OpenRouterSetting> {
 }
 
 export async function buildDoctorPacket(input: DoctorInput): Promise<DoctorPacket> {
-  const failedDeployment =
-    input.deployments.find((deployment) => deployment.status === 'failed') ??
-    (input.app.status === 'failed' ? input.deployments[0] : undefined);
+  const latestDeployment = input.deployments[0];
+  const latestFailed = latestDeployment?.status === 'failed' ? latestDeployment : undefined;
+  const historicalFailure =
+    latestDeployment?.status === 'succeeded'
+      ? input.deployments.find((deployment) => deployment.status === 'failed')
+      : undefined;
+  const failedDeployment = latestFailed ?? (input.app.status === 'failed' ? latestDeployment : undefined);
   const details = asRecord(failedDeployment?.error_details_json);
-  const manifest = asRecord(failedDeployment?.manifest ?? input.deployments[0]?.manifest);
+  const manifest = asRecord(failedDeployment?.manifest ?? latestDeployment?.manifest);
   const healthPath = stringValue(details.healthCheckPath) ?? stringValue(manifest.healthCheckPath);
   const checkedUrl = stringValue(details.checkedUrl);
   const port = numberValue(details.port) ?? numberValue(manifest.port);
@@ -139,6 +144,31 @@ export async function buildDoctorPacket(input: DoctorInput): Promise<DoctorPacke
     postgresLogs: input.postgres.logs
   });
   const evidence: DoctorEvidence[] = [];
+
+  if (latestDeployment?.status === 'succeeded' && input.app.status === 'running') {
+    evidence.push({
+      source: 'deployment',
+      label: 'Current deployment',
+      value: `Latest deployment v${latestDeployment.version_number} succeeded.`,
+      severity: 'info'
+    });
+    if (historicalFailure) {
+      evidence.push({
+        source: 'deployment',
+        label: 'Historical failure',
+        value: `Older deployment v${historicalFailure.version_number} failed with ${historicalFailure.error_code ?? 'an unknown error'}.`,
+        severity: 'info'
+      });
+    }
+    return packetFor({
+      app: input.app,
+      category: 'healthy',
+      evidence,
+      relatedDeploymentId: latestDeployment.id,
+      healthCheckResult: { status: 'passed', checkedUrl, port, path: healthPath },
+      postgresEnabled: input.postgres.enabled
+    });
+  }
 
   if (!failedDeployment) {
     evidence.push({
@@ -313,6 +343,8 @@ function packetFor(input: {
 function summaryFor(app: AppRow, category: DoctorRootCause): string {
   const prefix = `${app.name} diagnosis`;
   switch (category) {
+    case 'healthy':
+      return `${prefix}: current app state looks healthy and the latest deployment succeeded.`;
     case 'missing_health_route':
       return `${prefix}: the configured health check route appears to be missing or returning a non-2xx response.`;
     case 'wrong_bind_host':
@@ -368,6 +400,8 @@ function instructionFor(category: DoctorRootCause): string {
   switch (category) {
     case 'missing_health_route':
       return 'Add or repair a fast unauthenticated health route that returns HTTP 2xx, then set vibestack.json healthCheckPath to that route.';
+    case 'healthy':
+      return 'No repair is needed for the current deployment. Ignore older failed deployment attempts unless the current app starts failing again.';
     case 'wrong_bind_host':
       return 'Change the web server to listen on 0.0.0.0 inside the container, not localhost or 127.0.0.1.';
     case 'wrong_port':

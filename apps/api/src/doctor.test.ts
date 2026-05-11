@@ -48,6 +48,45 @@ function deployment(overrides: Partial<DeploymentRow>): DeploymentRow {
 }
 
 describe('VibeStack Doctor', () => {
+  it('reports a healthy current state when a newer successful deployment supersedes an older failure', async () => {
+    const packet = await buildDoctorPacket({
+      app: { ...app, status: 'running', current_deployment_id: 'succeeded-deployment' },
+      deployments: [
+        deployment({
+          id: 'succeeded-deployment',
+          version_number: 3,
+          status: 'succeeded',
+          error_code: null,
+          error_message: null,
+          error_details_json: null
+        }),
+        deployment({
+          id: 'failed-deployment',
+          version_number: 2,
+          status: 'failed',
+          error_code: 'HEALTH_CHECK_FAILED',
+          error_message: 'Old failure',
+          error_details_json: {
+            checkedUrl: 'http://127.0.0.1:49152/health',
+            port: 3000,
+            healthCheckPath: '/health',
+            logExcerpt: 'Cannot GET /health'
+          }
+        })
+      ],
+      secrets: [],
+      appLogs: ['Listening on 3000', 'DB ready'],
+      postgres: { enabled: true, logs: [] }
+    });
+
+    expect(packet.rootCauseCategory).toBe('healthy');
+    expect(packet.relatedDeploymentId).toBe('succeeded-deployment');
+    expect(packet.healthCheckResult.status).toBe('passed');
+    expect(packet.summary).toContain('latest deployment succeeded');
+    expect(packet.suggestedFixPrompt).toContain('No repair is needed');
+    expect(packet.evidence.some((item) => item.label === 'Historical failure')).toBe(true);
+  });
+
   it('classifies missing health routes from failed health checks', async () => {
     const packet = await buildDoctorPacket({
       app,
