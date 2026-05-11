@@ -6,11 +6,17 @@ import { createDb } from './db.js';
 import { bootstrapFirstAdmin } from './bootstrap.js';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
+const MIGRATION_LOCK_NAMESPACE = 92821920;
+const MIGRATION_LOCK_ID = 1;
 
 export async function runMigrations(): Promise<void> {
   const config = loadConfig();
   const db = createDb(config);
+  const lockClient = await db.pool.connect();
+  let migrationLockAcquired = false;
   try {
+    await lockClient.query('SELECT pg_advisory_lock($1, $2)', [MIGRATION_LOCK_NAMESPACE, MIGRATION_LOCK_ID]);
+    migrationLockAcquired = true;
     await db.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         name text PRIMARY KEY,
@@ -47,6 +53,10 @@ export async function runMigrations(): Promise<void> {
 
     await bootstrapFirstAdmin(db, config);
   } finally {
+    if (migrationLockAcquired) {
+      await lockClient.query('SELECT pg_advisory_unlock($1, $2)', [MIGRATION_LOCK_NAMESPACE, MIGRATION_LOCK_ID]);
+    }
+    lockClient.release();
     await db.close();
   }
 }
