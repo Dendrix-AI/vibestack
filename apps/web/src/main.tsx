@@ -1000,7 +1000,7 @@ function DoctorPanel({ doctor, loading }: { doctor?: DoctorPacket | null; loadin
             </div>
             <div>
               <strong>Next action</strong>
-              <span>{doctor.safeToRetry ? 'Review and retry if nothing changed externally.' : 'Fix the app before retrying.'}</span>
+              <span>{doctor.rootCauseCategory === 'healthy' ? 'No repair needed.' : doctor.safeToRetry ? 'Review and retry if nothing changed externally.' : 'Fix the app before retrying.'}</span>
             </div>
           </div>
           <div className="doctor-evidence">

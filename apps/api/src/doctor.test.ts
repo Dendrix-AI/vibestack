@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildDoctorPacket, normalizeOpenRouterSetting, publicOpenRouterSetting } from './doctor.js';
+import {
+  buildDoctorPacket,
+  enrichDoctorWithOpenRouter,
+  normalizeOpenRouterSetting,
+  publicOpenRouterSetting
+} from './doctor.js';
 import { loadConfig } from './config.js';
-import { decryptSecret } from './crypto.js';
+import { decryptSecret, encryptSecret } from './crypto.js';
 import type { Db } from './db.js';
 import type { AppRow, DeploymentRow } from './types.js';
 
@@ -84,6 +89,8 @@ describe('VibeStack Doctor', () => {
     expect(packet.healthCheckResult.status).toBe('passed');
     expect(packet.summary).toContain('latest deployment succeeded');
     expect(packet.suggestedFixPrompt).toContain('No repair is needed');
+    expect(packet.suggestedFixPrompt).not.toContain('Fix the VibeStack deployment');
+    expect(packet.safeToRetry).toBe(true);
     expect(packet.evidence.some((item) => item.label === 'Historical failure')).toBe(true);
   });
 
@@ -171,5 +178,84 @@ describe('VibeStack Doctor', () => {
       configured: true,
       apiKeyConfigured: true
     });
+  });
+
+  it('caches OpenRouter enhancement per related deployment', async () => {
+    const config = loadConfig({
+      DATABASE_URL: 'postgres://vibestack:vibestack@localhost:5432/vibestack',
+      VIBESTACK_SECRET_KEY: 'test-secret-key-for-doctor-cache',
+      VIBESTACK_PUBLIC_URL: 'https://vibestack.local.test'
+    });
+    const openRouter = {
+      enabled: true,
+      model: 'openai/gpt-5.5',
+      encryptedApiKey: encryptSecret('sk-or-test', config.secretKey)
+    };
+    const cacheRows = new Map<string, unknown>();
+    const db = {
+      maybeOne: async (sql: string, params: unknown[] = []) => {
+        if (sql.includes('platform_settings')) return { value_json: openRouter };
+        if (sql.includes('doctor_cache')) return cacheRows.get(String(params[0])) ?? null;
+        return null;
+      },
+      query: async (_sql: string, params: unknown[] = []) => {
+        cacheRows.set(String(params[0]), {
+          root_cause_category: params[1],
+          openrouter_model: params[2],
+          packet_json: JSON.parse(String(params[3]))
+        });
+        return { rows: [], rowCount: 1 };
+      }
+    } as unknown as Db;
+    const packet = await buildDoctorPacket({
+      app,
+      deployments: [
+        deployment({
+          id: 'failed-deployment',
+          error_code: 'HEALTH_CHECK_FAILED',
+          error_details_json: {
+            checkedUrl: 'http://127.0.0.1:49152/health',
+            port: 3000,
+            healthCheckPath: '/health',
+            logExcerpt: 'Cannot GET /health'
+          }
+        })
+      ],
+      secrets: [],
+      appLogs: [],
+      postgres: { enabled: false, logs: [] }
+    });
+    let calls = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  summary: 'Enhanced summary',
+                  suggestedFixPrompt: 'Enhanced fix prompt'
+                })
+              }
+            }
+          ]
+        })
+      } as Response;
+    }) as typeof fetch;
+
+    try {
+      const first = await enrichDoctorWithOpenRouter(db, config, packet);
+      const second = await enrichDoctorWithOpenRouter(db, config, packet);
+
+      expect(calls).toBe(1);
+      expect(first.aiEnhancement?.summary).toBe('Enhanced summary');
+      expect(second.aiEnhancement?.summary).toBe('Enhanced summary');
+      expect(cacheRows.has('failed-deployment')).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
