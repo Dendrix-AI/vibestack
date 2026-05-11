@@ -49,6 +49,12 @@ export type DoctorPacket = {
   };
 };
 
+type CachedDoctorPacketRow = {
+  root_cause_category: string;
+  openrouter_model: string | null;
+  packet_json: unknown;
+};
+
 type OpenRouterSetting = {
   enabled?: boolean;
   model?: string;
@@ -222,6 +228,9 @@ export async function enrichDoctorWithOpenRouter(db: Db, config: Config, packet:
   if (!packet.relatedDeploymentId) return packet;
   const setting = await getOpenRouterSetting(db, config);
   if (!setting.enabled || !setting.apiKey) return packet;
+  const model = setting.model ?? DEFAULT_OPENROUTER_MODEL;
+  const cached = await cachedDoctorPacket(db, packet, model);
+  if (cached) return cached;
 
   const prompt = [
     'You are VibeStack Doctor. Improve this deployment troubleshooting packet for a coding agent.',
@@ -249,7 +258,7 @@ export async function enrichDoctorWithOpenRouter(db: Db, config: Config, packet:
         'X-Title': 'VibeStack Doctor'
       },
       body: JSON.stringify({
-        model: setting.model ?? DEFAULT_OPENROUTER_MODEL,
+        model,
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.2
       }),
@@ -268,14 +277,16 @@ export async function enrichDoctorWithOpenRouter(db: Db, config: Config, packet:
         ? parsed.suggestedFixPrompt.trim()
         : undefined;
     if (!summary && !suggestedFixPrompt) return packet;
-    return {
+    const enhanced = {
       ...packet,
       aiEnhancement: {
-        model: setting.model ?? DEFAULT_OPENROUTER_MODEL,
+        model,
         summary: summary ?? packet.summary,
         suggestedFixPrompt: suggestedFixPrompt ?? packet.suggestedFixPrompt
       }
     };
+    await cacheDoctorPacket(db, enhanced, model);
+    return enhanced;
   } catch {
     return packet;
   } finally {
@@ -329,7 +340,7 @@ function packetFor(input: {
     rootCauseCategory: input.category,
     evidence: input.evidence.slice(0, 18),
     suggestedFixPrompt: promptFor(input.app, input.category, input.evidence, input.healthCheckResult),
-    safeToRetry: input.category === 'unknown',
+    safeToRetry: input.category === 'unknown' || input.category === 'healthy',
     relatedDeploymentId: input.relatedDeploymentId,
     healthCheckResult: input.healthCheckResult,
     postgresHints: {
@@ -374,6 +385,22 @@ function promptFor(
   evidence: DoctorEvidence[],
   health: DoctorPacket['healthCheckResult']
 ): string {
+  if (category === 'healthy') {
+    const evidenceText = evidence
+      .slice(0, 8)
+      .map((item) => `- ${item.label}: ${item.value}`)
+      .join('\n');
+    return [
+      `Review the VibeStack Doctor result for app "${app.name}".`,
+      'Root cause category: healthy.',
+      'No repair is needed for the current deployment.',
+      'Evidence:',
+      evidenceText || '- Current deployment is healthy.',
+      '',
+      instructionFor(category)
+    ].join('\n');
+  }
+
   const evidenceText = evidence
     .slice(0, 8)
     .map((item) => `- ${item.label}: ${item.value}`)
@@ -529,4 +556,40 @@ function parseJsonObject(value: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+async function cachedDoctorPacket(db: Db, packet: DoctorPacket, model: string): Promise<DoctorPacket | null> {
+  if (!packet.relatedDeploymentId) return null;
+  const cached = await db.maybeOne<CachedDoctorPacketRow>(
+    `SELECT root_cause_category, openrouter_model, packet_json
+     FROM doctor_cache
+     WHERE deployment_id = $1`,
+    [packet.relatedDeploymentId]
+  );
+  if (!cached) return null;
+  if (cached.root_cause_category !== packet.rootCauseCategory) return null;
+  if (cached.openrouter_model !== model) return null;
+  return normalizeCachedDoctorPacket(cached.packet_json, packet);
+}
+
+async function cacheDoctorPacket(db: Db, packet: DoctorPacket, model: string): Promise<void> {
+  if (!packet.relatedDeploymentId || !packet.aiEnhancement) return;
+  await db.query(
+    `INSERT INTO doctor_cache (deployment_id, root_cause_category, openrouter_model, packet_json, updated_at)
+     VALUES ($1, $2, $3, $4, now())
+     ON CONFLICT (deployment_id) DO UPDATE
+     SET root_cause_category = EXCLUDED.root_cause_category,
+         openrouter_model = EXCLUDED.openrouter_model,
+         packet_json = EXCLUDED.packet_json,
+         updated_at = now()`,
+    [packet.relatedDeploymentId, packet.rootCauseCategory, model, JSON.stringify(packet)]
+  );
+}
+
+function normalizeCachedDoctorPacket(value: unknown, fallback: DoctorPacket): DoctorPacket | null {
+  const cached = asRecord(value);
+  if (typeof cached.summary !== 'string') return null;
+  if (cached.rootCauseCategory !== fallback.rootCauseCategory) return null;
+  if (cached.relatedDeploymentId !== fallback.relatedDeploymentId) return null;
+  return cached as DoctorPacket;
 }
