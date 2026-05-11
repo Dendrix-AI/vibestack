@@ -498,9 +498,69 @@ def diagnostics(args: argparse.Namespace) -> None:
     print(json.dumps(payload, indent=2))
 
 
+def doctor(args: argparse.Namespace) -> None:
+    defaults = load_defaults(args.config, args.credentials)
+    args.endpoint = args.endpoint or defaults.get("endpoint")
+    args.team = args.team or defaults.get("team")
+    args.app_id = args.app_id or defaults.get("app_id")
+    args.token = args.token or defaults.get("token")
+
+    args.endpoint = require_deploy_value(args.endpoint, "VibeStack API URL", "--api-url")
+    args.token = require_deploy_value(args.token, "VibeStack API token", "--token")
+    endpoint = args.endpoint.rstrip("/")
+
+    if not args.app_id:
+        if not args.app:
+            raise SystemExit("APP_REQUIRED: pass --app-id or --app when requesting Doctor output.")
+        args.app_id = resolve_existing_app_id(endpoint, args.token, args.app, args.team, args.insecure_tls)
+
+    payload = http_json(
+        "GET",
+        f"{endpoint}/api/v1/apps/{args.app_id}/doctor?tail={args.diagnostics_tail}",
+        args.token,
+        insecure_tls=args.insecure_tls,
+    )
+    print(json.dumps(payload, indent=2))
+
+
+def fetch_doctor(endpoint: str, token: str, app_id: str, insecure_tls: bool, tail: int = 300) -> dict[str, Any] | None:
+    try:
+        payload = http_json(
+            "GET",
+            f"{endpoint}/api/v1/apps/{app_id}/doctor?tail={tail}",
+            token,
+            insecure_tls=insecure_tls,
+        )
+    except RuntimeError:
+        return None
+    doctor = payload.get("doctor")
+    return doctor if isinstance(doctor, dict) else None
+
+
+def print_doctor_guidance(doctor: dict[str, Any]) -> None:
+    summary = doctor.get("summary")
+    ai = doctor.get("aiEnhancement")
+    if isinstance(ai, dict) and isinstance(ai.get("summary"), str):
+        summary = ai["summary"]
+    category = doctor.get("rootCauseCategory") or "unknown"
+    prompt = doctor.get("suggestedFixPrompt")
+    if isinstance(ai, dict) and isinstance(ai.get("suggestedFixPrompt"), str):
+        prompt = ai["suggestedFixPrompt"]
+
+    print(f"Doctor diagnosis: {summary or category}")
+    if category != "unknown":
+        print(f"I found the issue: {category}. Fix the app before retrying this deployment.")
+    if isinstance(prompt, str) and prompt.strip():
+        print("Suggested fix prompt for a coding agent:")
+        print(prompt.strip())
+
+
 def deploy(args: argparse.Namespace) -> None:
     if args.diagnostics:
         diagnostics(args)
+        return
+    if args.doctor:
+        doctor(args)
         return
 
     defaults = load_defaults(args.config, args.credentials)
@@ -629,6 +689,11 @@ def deploy(args: argparse.Namespace) -> None:
                 return
             print("Deployment failed:")
             print(json.dumps(status.get("error") or status, indent=2))
+            app_id = status.get("appId") or (status.get("app") or {}).get("id") or created.get("appId") or args.app_id
+            if app_id:
+                doctor = fetch_doctor(endpoint, args.token, str(app_id), args.insecure_tls, args.diagnostics_tail)
+                if doctor:
+                    print_doctor_guidance(doctor)
             raise SystemExit(1)
 
         time.sleep(args.poll_interval)
@@ -663,6 +728,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--smoke-timeout", type=int, default=90, help="seconds to wait for local smoke health")
     parser.add_argument("--diagnostics", action="store_true", help="fetch app diagnostics instead of deploying")
+    parser.add_argument("--doctor", action="store_true", help="fetch VibeStack Doctor output instead of deploying")
     parser.add_argument("--diagnostics-tail", type=int, default=300, help="number of app and Postgres log lines to scan")
     return parser
 

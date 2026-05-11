@@ -152,6 +152,42 @@ export type LogLine = {
   stream?: string;
 };
 
+export type DoctorPacket = {
+  summary: string;
+  rootCauseCategory: string;
+  evidence: {
+    source: string;
+    label: string;
+    value: string;
+    severity: 'info' | 'warning' | 'error' | string;
+  }[];
+  suggestedFixPrompt: string;
+  safeToRetry: boolean;
+  relatedDeploymentId: string | null;
+  healthCheckResult: {
+    status: 'failed' | 'passed' | 'unknown' | string;
+    checkedUrl?: string;
+    port?: number;
+    path?: string;
+    message?: string;
+  };
+  postgresHints: {
+    enabled: boolean;
+    issue?: string;
+    evidence: {
+      source: string;
+      label: string;
+      value: string;
+      severity: 'info' | 'warning' | 'error' | string;
+    }[];
+  };
+  aiEnhancement?: {
+    model: string;
+    summary: string;
+    suggestedFixPrompt: string;
+  };
+};
+
 export type ApiToken = {
   id: string;
   name: string;
@@ -220,6 +256,15 @@ export type PlatformSettings = {
     configured?: boolean;
     apiTokenConfigured?: boolean;
     api_token_configured?: boolean;
+  };
+  openRouter?: {
+    enabled?: boolean;
+    model?: string;
+    apiKey?: string;
+    api_key?: string;
+    configured?: boolean;
+    apiKeyConfigured?: boolean;
+    api_key_configured?: boolean;
   };
   dataDirectory?: string;
   data_directory?: string;

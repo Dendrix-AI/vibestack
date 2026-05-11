@@ -134,7 +134,7 @@ Read `references/manifest.md` for the manifest contract.
 12. Poll every 30 seconds until status is terminal.
 13. Report the live URL on success.
 14. If the helper generated an external app password, relay it to the user exactly once and explain that VibeStack stores only a hash.
-15. On failure, use the returned `agentHint`, error code, and details to fix the project and retry when appropriate.
+15. On failure, use the returned `agentHint`, error code, details, and VibeStack Doctor output to fix the project and retry when appropriate.
 
 ## Runtime Diagnostics
 
@@ -142,7 +142,7 @@ When a deployed app behaves incorrectly after a successful deployment, do not gu
 
 ```bash
 python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
-  --diagnostics \
+  --doctor \
   --app-id de52380f-282b-44de-a741-17118f331b01
 ```
 
@@ -155,6 +155,16 @@ python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
 ```
 
 Diagnostics include the current deployment, recent deployments, app container logs, and VibeStack-managed Postgres metadata plus matching Postgres log lines. Use them to identify failing routes, uncaught exceptions, database connection problems, missing tables, failed migrations, and hard-coded credentials. If Postgres is enabled, the app must use the injected `DATABASE_URL`; do not hard-code `localhost`, `127.0.0.1`, database names, usernames, or passwords. Do not print secrets or full logs back to the user; summarize the relevant error lines and fix the app code directly.
+
+VibeStack also exposes a Doctor packet:
+
+```bash
+python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
+  --diagnostics \
+  --app-id de52380f-282b-44de-a741-17118f331b01
+```
+
+The deploy helper automatically fetches `GET /api/v1/apps/{appId}/doctor` after a failed deployment. If Doctor returns a deterministic `rootCauseCategory`, tell the user: "I found the issue: <category>. I'm fixing it now." Then patch the app directly, run the helper with `--smoke-test`, and retry only after a concrete fix. Do not resubmit the same artifact.
 
 ## Helper Script
 

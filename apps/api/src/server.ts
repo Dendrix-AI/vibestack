@@ -44,6 +44,12 @@ import { publicCloudflareSetting } from './cloudflare.js';
 import { getSelfUpdateStatus, startSelfUpdate } from './updater.js';
 import { schemaCompatibilityForRef } from './schema-compatibility.js';
 import { createSystemBackup, restoreSystemBackup } from './system-backup.js';
+import {
+  buildDoctorPacket,
+  enrichDoctorWithOpenRouter,
+  normalizeOpenRouterSetting,
+  publicOpenRouterSetting
+} from './doctor.js';
 
 type AppContext = {
   config: Config;
@@ -91,11 +97,23 @@ async function currentSettings(db: Db, config: Config): Promise<Record<string, u
           })
         ];
       }
+      if (row.key === 'openRouter') {
+        const setting = (row.value_json as Record<string, unknown>) ?? {};
+        return [
+          row.key,
+          publicOpenRouterSetting({
+            enabled: typeof setting.enabled === 'boolean' ? setting.enabled : undefined,
+            model: typeof setting.model === 'string' ? setting.model : undefined,
+            encryptedApiKey: typeof setting.encryptedApiKey === 'string' ? setting.encryptedApiKey : undefined
+          })
+        ];
+      }
       return [row.key, row.encrypted ? { configured: true } : row.value_json];
     })
   );
   return {
     updateChannel: config.updateChannel,
+    openRouter: publicOpenRouterSetting({}),
     ...settings
   };
 }
@@ -1039,13 +1057,19 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       'buildTimeoutSeconds',
       'dataDirectory',
       'updateChannel',
-      'cloudflare'
+      'cloudflare',
+      'openRouter'
     ]);
     for (const [key, value] of Object.entries(body)) {
       if (!allowed.has(key)) {
         throw new HttpError({ code: 'INVALID_SETTING', message: `Setting ${key} is not supported.`, statusCode: 400 });
       }
-      const storedValue = key === 'updateChannel' ? validateUpdateChannel(value) : value;
+      const storedValue =
+        key === 'updateChannel'
+          ? validateUpdateChannel(value)
+          : key === 'openRouter'
+            ? await normalizeOpenRouterSetting(db, config, value)
+            : value;
       await db.query(
         `INSERT INTO platform_settings (key, value_json, encrypted, updated_by_user_id, updated_at)
          VALUES ($1, $2, false, $3, now())
@@ -1641,6 +1665,48 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
       agentHint:
         'Use appLogs first for application exceptions. If Postgres is enabled, compare errors with postgres.logs and verify the app uses DATABASE_URL without hard-coded credentials.'
     };
+  });
+
+  app.get('/api/v1/apps/:id/doctor', async (request) => {
+    const actor = await requireActor(db, request);
+    const { id } = parseParams(IdParam, request);
+    const query = parseQuery(LogQuery, request);
+    const appRow = await getAuthorizedApp(db, actor, id, 'creator');
+    const deployments = await db.query<DeploymentRow>(
+      `SELECT *
+       FROM deployments
+       WHERE app_id = $1
+       ORDER BY created_at DESC
+       LIMIT 5`,
+      [id]
+    );
+    const secrets = await db.query<{ key: string }>('SELECT key FROM app_secrets WHERE app_id = $1 ORDER BY key', [id]);
+    const appLogs =
+      config.runtimeDriver === 'docker' && appRow.current_deployment_id
+        ? await dockerLogsForDeployment(config, id, appRow.current_deployment_id, query.tail).catch(() => null)
+        : null;
+    const postgresCredentials = await db.maybeOne<{ database_name: string; database_user: string }>(
+      'SELECT database_name, database_user FROM app_db_credentials WHERE app_id = $1 AND deleted_at IS NULL',
+      [id]
+    );
+    const postgresLogs = postgresCredentials
+      ? await dockerLogsForPostgres(
+          config,
+          [id, postgresCredentials.database_name, postgresCredentials.database_user],
+          query.tail
+        ).catch(() => null)
+      : null;
+    const packet = await buildDoctorPacket({
+      app: appRow,
+      deployments: deployments.rows,
+      secrets: secrets.rows.map((row) => row.key),
+      appLogs: appLogs ? appLogs.split('\n').filter(Boolean) : [],
+      postgres: {
+        enabled: Boolean(postgresCredentials),
+        logs: postgresLogs?.logs ?? []
+      }
+    });
+    return { doctor: await enrichDoctorWithOpenRouter(db, config, packet) };
   });
 
   app.get('/api/v1/audit-logs', async (request) => {
