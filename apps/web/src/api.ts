@@ -6,6 +6,7 @@ import type {
   AppSummary,
   AuditLog,
   Deployment,
+  DoctorPacket,
   LifecycleEvent,
   LogLine,
   MeResponse,
@@ -210,6 +211,10 @@ export const api = {
     }
 
     return normalizeList(response, ['logs']);
+  },
+
+  getDoctor(appId: string): Promise<DoctorPacket> {
+    return request<unknown>(`/apps/${appId}/doctor`).then((value) => unwrap<DoctorPacket>(value, 'doctor'));
   },
 
   async listEvents(appId: string): Promise<LifecycleEvent[]> {

@@ -42,6 +42,7 @@ import type {
   ApiToken,
   AuditLog,
   Deployment,
+  DoctorPacket,
   LifecycleEvent,
   LogLine,
   PlatformSettings,
@@ -58,13 +59,15 @@ type DetailState = {
   secrets: AppSecret[];
   events: LifecycleEvent[];
   logs: LogLine[];
+  doctor?: DoctorPacket | null;
 };
 
 const emptyDetail: DetailState = {
   deployments: [],
   secrets: [],
   events: [],
-  logs: []
+  logs: [],
+  doctor: null
 };
 
 function nameOf(user: User): string {
@@ -302,13 +305,14 @@ function App() {
     setDetailError(undefined);
 
     try {
-      const [deployments, secrets, events, logs] = await Promise.all([
+      const [deployments, secrets, events, logs, doctor] = await Promise.all([
         api.listDeployments(appId),
         api.listSecrets(appId),
         api.listEvents(appId),
-        api.listLogs(appId)
+        api.listLogs(appId),
+        api.getDoctor(appId)
       ]);
-      setDetail({ deployments, secrets, events, logs });
+      setDetail({ deployments, secrets, events, logs, doctor });
     } catch (caught) {
       setDetailError(formatApiError(caught));
     } finally {
@@ -804,6 +808,8 @@ function AppDetail(props: Parameters<typeof AppsView>[0] & { app: AppSummary }) 
         </button>
       </div>
 
+      <DoctorPanel doctor={props.detail.doctor} loading={props.detailLoading} />
+
       <div className="detail-grid">
         <section className="panel">
           <PanelTitle icon={ShieldCheck} title="Sharing" />
@@ -951,6 +957,69 @@ function AppDetail(props: Parameters<typeof AppsView>[0] & { app: AppSummary }) 
   );
 }
 
+function DoctorPanel({ doctor, loading }: { doctor?: DoctorPacket | null; loading: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const smartSummary = doctor?.aiEnhancement?.summary;
+  const fixPrompt = doctor?.aiEnhancement?.suggestedFixPrompt ?? doctor?.suggestedFixPrompt ?? '';
+  const health = doctor?.healthCheckResult;
+  const postgres = doctor?.postgresHints;
+  const evidence = doctor?.evidence ?? [];
+
+  async function copyPrompt() {
+    if (!fixPrompt) return;
+    await navigator.clipboard.writeText(fixPrompt);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  return (
+    <section className="panel doctor-panel">
+      <div className="panel-title-row">
+        <PanelTitle icon={LifeBuoy} title="Doctor" />
+        <button className="button secondary small" type="button" onClick={() => void copyPrompt()} disabled={!fixPrompt}>
+          <Copy size={15} /> {copied ? 'Copied' : 'Copy fix prompt'}
+        </button>
+      </div>
+      {loading && !doctor ? <div className="inline-loader"><Loader2 className="spin" size={16} /> Loading diagnosis</div> : null}
+      {doctor ? (
+        <>
+          <div className="doctor-summary">
+            <span className={`status-pill ${doctor.rootCauseCategory === 'unknown' ? 'neutral' : 'bad'}`}>
+              {statusLabel(doctor.rootCauseCategory)}
+            </span>
+            <p>{smartSummary ?? doctor.summary}</p>
+          </div>
+          <div className="doctor-grid">
+            <div>
+              <strong>Health check</strong>
+              <span>{health?.status ?? 'unknown'}{health?.path ? ` at ${health.path}` : ''}{health?.port ? ` on port ${health.port}` : ''}</span>
+            </div>
+            <div>
+              <strong>Postgres</strong>
+              <span>{postgres?.enabled ? (postgres.issue ? statusLabel(postgres.issue) : 'enabled, no specific issue') : 'not enabled'}</span>
+            </div>
+            <div>
+              <strong>Next action</strong>
+              <span>{doctor.safeToRetry ? 'Review and retry if nothing changed externally.' : 'Fix the app before retrying.'}</span>
+            </div>
+          </div>
+          <div className="doctor-evidence">
+            {evidence.length === 0 ? <p className="muted">No focused evidence available yet.</p> : evidence.slice(0, 4).map((item, index) => (
+              <div key={`${item.source}-${item.label}-${index}`} className={`evidence-item ${item.severity}`}>
+                <strong>{item.label}</strong>
+                <code>{item.value}</code>
+              </div>
+            ))}
+          </div>
+          {doctor.aiEnhancement ? <p className="muted">OpenRouter enhancement: {doctor.aiEnhancement.model}</p> : null}
+        </>
+      ) : !loading ? (
+        <p className="muted">No diagnosis available.</p>
+      ) : null}
+    </section>
+  );
+}
+
 function UsersView({ users, onCreate, onUpdate }: { users: User[]; teams: Team[]; onCreate: (payload: { email: string; displayName: string; password: string; isPlatformAdmin: boolean }) => Promise<void>; onUpdate: (userId: string, payload: Partial<User>) => Promise<void> }) {
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -1085,6 +1154,7 @@ function SettingsView({
 }) {
   const [draft, setDraft] = useState<PlatformSettings>(settings);
   const [cloudflareToken, setCloudflareToken] = useState('');
+  const [openRouterKey, setOpenRouterKey] = useState('');
   const [saved, setSaved] = useState(false);
   const [updateBusy, setUpdateBusy] = useState<'check' | 'apply'>();
   const [backupBusy, setBackupBusy] = useState<'download' | 'restore'>();
@@ -1094,6 +1164,7 @@ function SettingsView({
   useEffect(() => {
     setDraft(settings);
     setCloudflareToken('');
+    setOpenRouterKey('');
   }, [settings]);
 
   async function submit(event: React.FormEvent) {
@@ -1112,10 +1183,15 @@ function SettingsView({
         cloudflare: {
           ...(draft.cloudflare ?? {}),
           ...(cloudflareToken ? { apiToken: cloudflareToken } : {})
+        },
+        openRouter: {
+          ...(draft.openRouter ?? {}),
+          ...(openRouterKey ? { apiKey: openRouterKey } : {})
         }
       });
       setSaved(true);
       setCloudflareToken('');
+      setOpenRouterKey('');
     } catch (caught) {
       setError(formatApiError(caught));
     }
@@ -1124,6 +1200,9 @@ function SettingsView({
   const cloudflare = draft.cloudflare ?? {};
   const cloudflareZoneId = cloudflare.zoneId ?? cloudflare.zone_id ?? '';
   const cloudflareConfigured = Boolean(cloudflare.configured ?? cloudflare.apiTokenConfigured ?? cloudflare.api_token_configured);
+  const openRouter = draft.openRouter ?? {};
+  const openRouterConfigured = Boolean(openRouter.configured ?? openRouter.apiKeyConfigured ?? openRouter.api_key_configured);
+  const openRouterModel = openRouter.model ?? 'openai/gpt-5.5';
   const updateAvailable = Boolean(update?.updateAvailable);
   const updateRunning = update?.state === 'running';
   const currentVersionLabel = versionLabel(update?.currentVersion, update?.currentTag, update?.currentRevision);
@@ -1209,6 +1288,16 @@ function SettingsView({
         <p className="muted">Cloudflare token values are write-only. The backend returns status flags instead of token material.</p>
         <span className={`status-pill ${cloudflareConfigured ? 'good' : 'neutral'}`}>
           {cloudflareConfigured ? 'configured' : 'not configured'}
+        </span>
+      </section>
+      <section className="panel">
+        <PanelTitle icon={LifeBuoy} title="OpenRouter Doctor" />
+        <label>Model<input value={openRouterModel} onChange={(event) => setDraft({ ...draft, openRouter: { ...openRouter, model: event.target.value } })} /></label>
+        <label>API key<input value={openRouterKey} onChange={(event) => setOpenRouterKey(event.target.value)} placeholder={openRouterConfigured ? 'Leave blank to keep existing key' : 'Paste OpenRouter key'} type="password" /></label>
+        <label className="toggle"><input type="checkbox" checked={openRouter.enabled ?? openRouterConfigured} onChange={(event) => setDraft({ ...draft, openRouter: { ...openRouter, enabled: event.target.checked } })} /> Enable smart troubleshooting</label>
+        <p className="muted">The key is encrypted in VibeStack settings storage and used only to enrich Doctor packets. Deterministic diagnosis still runs without it.</p>
+        <span className={`status-pill ${openRouterConfigured ? 'good' : 'neutral'}`}>
+          {openRouterConfigured ? 'configured' : 'not configured'}
         </span>
       </section>
       <section className="panel">

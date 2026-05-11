@@ -30,10 +30,12 @@ VibeStack v1 targets a single-host Docker Compose installation with:
 - App lifecycle controls: deploy, update, start, stop, delete, rollback.
 - Latest version plus two previous versions available for rollback.
 - App logs, deployment history, audit logs, and lifecycle events.
+- VibeStack Doctor diagnostics with root-cause categories, evidence, and copyable coding-agent fix prompts.
 - App secrets as environment variables, never revealed after creation.
 - Optional Postgres per app, using separate databases in the same Postgres server as VibeStack metadata.
 - Persistent app volumes.
 - Maintenance mode and admin-configurable announcement banner.
+- Optional OpenRouter-powered Doctor enrichment using `openai/gpt-5.5`.
 - OpenAPI-first API design.
 
 ## Quickstart Paths
@@ -54,6 +56,8 @@ The initial Claude Code companion skill lives in:
 - [skills/deploy-to-vibestack/SKILL.md](skills/deploy-to-vibestack/SKILL.md)
 
 It describes how an AI coding agent should prepare a web app for VibeStack, create or validate `vibestack.json`, package the source as a tarball, submit it to the deployment API, and poll for status.
+
+When a deployment fails, the helper now fetches VibeStack Doctor output from the server. Doctor classifies common generated-app failures such as missing health routes, wrong bind hosts, port mismatches, missing environment secrets, hard-coded localhost Postgres connections, missing database tables or migrations, build failures, and container startup failures. The management UI shows the same diagnosis and includes a copyable fix prompt for Claude Code, Codex, or another coding agent.
 
 The skill also includes a reference API contract and a helper script:
 
@@ -100,7 +104,7 @@ The Cloudflare token must be able to edit DNS records in the zone used by the ho
 
 ## Current Status
 
-This repository is an initial public release. It includes the VibeStack API, worker, web app, shared package, deployment skill, and sample application fixtures. APIs and operational behavior may change before a 1.0 release.
+This repository is an initial public release. It includes the VibeStack API, worker, web app, shared package, deployment skill, VibeStack Doctor troubleshooting workflow, and sample application fixtures. APIs and operational behavior may change before a 1.0 release.
 
 ## Contributing
 

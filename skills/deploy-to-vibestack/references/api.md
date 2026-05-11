@@ -200,6 +200,47 @@ Success:
 }
 ```
 
+## App Doctor
+
+Use this after a failed deployment or unhealthy app state. Doctor returns a compact, coding-agent-friendly repair packet. The deterministic fields are always available; `aiEnhancement` appears only when a platform admin has configured OpenRouter in VibeStack settings.
+
+```http
+GET /api/v1/apps/{appId}/doctor?tail=300
+```
+
+Success:
+
+```json
+{
+  "doctor": {
+    "summary": "todo-notes diagnosis: the app database appears to be missing a table or startup migration.",
+    "rootCauseCategory": "missing_table_or_migration",
+    "relatedDeploymentId": "dep_456",
+    "safeToRetry": false,
+    "healthCheckResult": {
+      "status": "failed",
+      "checkedUrl": "http://127.0.0.1:3000/health",
+      "port": 3000,
+      "path": "/health"
+    },
+    "postgresHints": {
+      "enabled": true,
+      "issue": "missing_table_or_migration",
+      "evidence": []
+    },
+    "evidence": [
+      {
+        "source": "logs",
+        "label": "Relevant log excerpt",
+        "value": "ERROR: relation notes does not exist",
+        "severity": "error"
+      }
+    ],
+    "suggestedFixPrompt": "Fix the VibeStack deployment for app \"todo-notes\"..."
+  }
+}
+```
+
 ## Rollback
 
 ```http
