@@ -13,6 +13,8 @@ Creators should not be exposed to Git, Docker, Traefik, Cloudflare, or build-sys
 
 ## Updating This Skill
 
+The helper checks whether the installed skill bundle is current before every helper command. If it can confirm a newer bundle exists, it stops before deployment and tells the agent to update the installed user-level skill. If GitHub cannot be reached, the check is non-blocking and the helper continues.
+
 If the user asks to update, refresh, or reinstall the VibeStack deployment skill, fetch the latest skill from:
 
 <https://github.com/Dendrix-AI/vibestack/tree/main/skills/deploy-to-vibestack>
@@ -26,6 +28,8 @@ Preferred update flow:
 3. Replace the installed skill directory with `skills/deploy-to-vibestack` from the downloaded repository.
 4. Verify the installed copy contains `SKILL.md`, `scripts/vibestack_deploy.py`, `references/api.md`, and `references/manifest.md`.
 5. Do not deploy any app as part of a skill update unless the user explicitly asks for deployment afterward.
+
+For emergency work when the update endpoint is wrong or the user intentionally needs an older installed copy, pass `--skip-skill-update-check` or set `VIBESTACK_SKIP_SKILL_UPDATE_CHECK=1`. Do not use that bypass as the normal deployment path.
 
 ## Required Inputs
 
@@ -196,6 +200,8 @@ python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
 ```
 
 The script loads defaults from environment variables and user-level config, performs local validation, optionally smoke-tests the packaged Docker context, creates a tarball, submits it using the VibeStack deployment API, and polls status. If the VibeStack implementation changes, read `references/api.md` and adjust the request shape.
+
+Before running diagnostics, Doctor, dry-run, smoke-test, or deployment work, the script checks the installed skill bundle version against the latest version in the VibeStack repository. If it reports `SKILL_UPDATE_AVAILABLE`, update the installed user-level skill first and rerun the helper.
 
 For validation without a live server, add `--dry-run`. For a stronger preflight, combine `--dry-run --smoke-test`.
 

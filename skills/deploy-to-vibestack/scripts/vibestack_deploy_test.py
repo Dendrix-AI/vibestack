@@ -33,6 +33,7 @@ class DeployHelperDryRunTest(unittest.TestCase):
             [
                 sys.executable,
                 str(SCRIPT),
+                "--skip-skill-update-check",
                 "--source",
                 str(FIXTURES / "node-basic"),
                 "--dry-run",
@@ -58,6 +59,7 @@ class DeployHelperDryRunTest(unittest.TestCase):
                 [
                     sys.executable,
                     str(SCRIPT),
+                    "--skip-skill-update-check",
                     "--config",
                     str(config),
                     "--credentials",
@@ -109,6 +111,7 @@ class DeployHelperDryRunTest(unittest.TestCase):
                 [
                     "--source",
                     str(source),
+                    "--skip-skill-update-check",
                     "--dry-run",
                     "--smoke-test",
                     "--smoke-timeout",
@@ -240,6 +243,7 @@ class DeployHelperDryRunTest(unittest.TestCase):
         args = module.build_parser().parse_args(
             [
                 "--doctor",
+                "--skip-skill-update-check",
                 "--api-url",
                 "https://vibestack.local.test",
                 "--token",
@@ -270,6 +274,7 @@ class DeployHelperDryRunTest(unittest.TestCase):
         args = module.build_parser().parse_args(
             [
                 "--doctor",
+                "--skip-skill-update-check",
                 "--api-url",
                 "https://vibestack.local.test",
                 "--token",
@@ -307,6 +312,47 @@ class DeployHelperDryRunTest(unittest.TestCase):
         self.assertIn("I found the issue: wrong_port", output.getvalue())
         self.assertIn("fix ai", output.getvalue())
 
+    def test_skill_update_check_blocks_when_remote_version_is_newer(self) -> None:
+        module = load_helper_module()
+
+        module.fetch_latest_skill_version = lambda timeout_seconds: "2099-01-01.1"
+        args = module.build_parser().parse_args(["--dry-run"])
+
+        with self.assertRaisesRegex(SystemExit, "SKILL_UPDATE_AVAILABLE"):
+            module.check_skill_update(args)
+
+    def test_skill_update_check_can_be_skipped(self) -> None:
+        module = load_helper_module()
+        calls = 0
+
+        def fake_fetch(timeout_seconds):
+            nonlocal calls
+            calls += 1
+            return "2099-01-01.1"
+
+        module.fetch_latest_skill_version = fake_fetch
+        args = module.build_parser().parse_args(["--dry-run", "--skip-skill-update-check"])
+
+        module.check_skill_update(args)
+
+        self.assertEqual(calls, 0)
+
+    def test_skill_update_check_allows_current_version(self) -> None:
+        module = load_helper_module()
+
+        module.fetch_latest_skill_version = lambda timeout_seconds: module.SKILL_BUNDLE_VERSION
+        args = module.build_parser().parse_args(["--dry-run"])
+
+        module.check_skill_update(args)
+
+    def test_skill_update_check_allows_local_version_newer_than_remote(self) -> None:
+        module = load_helper_module()
+
+        module.fetch_latest_skill_version = lambda timeout_seconds: "2026-01-01.1"
+        args = module.build_parser().parse_args(["--dry-run"])
+
+        module.check_skill_update(args)
+
     def test_dry_run_fails_without_dockerfile(self) -> None:
         result = self.run_helper("missing-dockerfile")
 
@@ -331,6 +377,7 @@ class DeployHelperDryRunTest(unittest.TestCase):
             [
                 sys.executable,
                 str(SCRIPT),
+                "--skip-skill-update-check",
                 "--api-url",
                 "https://vibestack.local.test",
                 "--token",

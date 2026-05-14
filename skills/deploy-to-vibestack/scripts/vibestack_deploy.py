@@ -27,6 +27,13 @@ from typing import Any
 from urllib import error, request
 
 
+SKILL_BUNDLE_VERSION = "2026-05-14.1"
+SKILL_LATEST_SCRIPT_URL = (
+    "https://raw.githubusercontent.com/Dendrix-AI/vibestack/main/"
+    "skills/deploy-to-vibestack/scripts/vibestack_deploy.py"
+)
+SKILL_UPDATE_URL = "https://github.com/Dendrix-AI/vibestack/tree/main/skills/deploy-to-vibestack"
+
 EXCLUDE_DIRS = {
     ".git",
     "node_modules",
@@ -61,6 +68,7 @@ CREDENTIAL_PATHS = [
 ]
 EXTERNAL_PASSWORD_ALPHABET = string.ascii_letters + string.digits + "-_"
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+SKILL_VERSION_RE = re.compile(r"(?m)^SKILL_BUNDLE_VERSION\s*=\s*[\"']([^\"']+)[\"']")
 
 
 def parse_bool(value: str) -> bool:
@@ -70,6 +78,70 @@ def parse_bool(value: str) -> bool:
     if lowered in {"0", "false", "no", "n"}:
         return False
     raise argparse.ArgumentTypeError(f"expected boolean, got {value!r}")
+
+
+def env_flag(name: str) -> bool:
+    value = os.environ.get(name)
+    if not value:
+        return False
+    return value.lower() in {"1", "true", "yes", "y"}
+
+
+def fetch_latest_skill_version(timeout_seconds: int) -> str | None:
+    url = os.environ.get("VIBESTACK_SKILL_LATEST_SCRIPT_URL") or SKILL_LATEST_SCRIPT_URL
+    req = request.Request(
+        url,
+        headers={
+            "Accept": "text/plain",
+            "User-Agent": f"vibestack-deploy-skill/{SKILL_BUNDLE_VERSION}",
+        },
+    )
+    with request.urlopen(req, timeout=timeout_seconds) as response:
+        # The helper is small; cap reads so a bad endpoint cannot fill memory.
+        text = response.read(512 * 1024).decode("utf-8", errors="replace")
+
+    match = SKILL_VERSION_RE.search(text)
+    return match.group(1) if match else None
+
+
+def skill_version_key(value: str) -> tuple[int, ...] | None:
+    parts = re.split(r"[^0-9]+", value)
+    numbers = [int(part) for part in parts if part]
+    return tuple(numbers) if numbers else None
+
+
+def skill_update_available(current_version: str, latest_version: str) -> bool:
+    current_key = skill_version_key(current_version)
+    latest_key = skill_version_key(latest_version)
+    if current_key and latest_key:
+        return latest_key > current_key
+    return latest_version != current_version
+
+
+def check_skill_update(args: argparse.Namespace) -> None:
+    if args.skip_skill_update_check or env_flag("VIBESTACK_SKIP_SKILL_UPDATE_CHECK"):
+        return
+
+    try:
+        latest_version = fetch_latest_skill_version(args.skill_update_timeout)
+    except (TimeoutError, OSError, ValueError, error.URLError, http.client.HTTPException) as exc:
+        print(
+            f"Skill update check skipped: could not reach GitHub ({exc}).",
+            file=sys.stderr,
+        )
+        return
+
+    if not latest_version:
+        print("Skill update check skipped: latest skill version could not be read.", file=sys.stderr)
+        return
+
+    if skill_update_available(SKILL_BUNDLE_VERSION, latest_version):
+        raise SystemExit(
+            "SKILL_UPDATE_AVAILABLE: the installed deploy-to-vibestack skill is out of date "
+            f"({SKILL_BUNDLE_VERSION}; latest is {latest_version}). Update the installed user-level skill from "
+            f"{SKILL_UPDATE_URL}, then rerun this command. If this is an emergency and you intentionally need "
+            "the older copy, rerun with --skip-skill-update-check."
+        )
 
 
 def generate_external_password(length: int = 24) -> str:
@@ -556,6 +628,8 @@ def print_doctor_guidance(doctor: dict[str, Any]) -> None:
 
 
 def deploy(args: argparse.Namespace) -> None:
+    check_skill_update(args)
+
     if args.diagnostics:
         diagnostics(args)
         return
@@ -730,6 +804,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--diagnostics", action="store_true", help="fetch app diagnostics instead of deploying")
     parser.add_argument("--doctor", action="store_true", help="fetch VibeStack Doctor output instead of deploying")
     parser.add_argument("--diagnostics-tail", type=int, default=300, help="number of app and Postgres log lines to scan")
+    parser.add_argument(
+        "--skip-skill-update-check",
+        action="store_true",
+        help="skip the deploy-to-vibestack skill freshness check",
+    )
+    parser.add_argument(
+        "--skill-update-timeout",
+        type=int,
+        default=3,
+        help="seconds to wait for the deploy-to-vibestack skill freshness check",
+    )
     return parser
 
 
