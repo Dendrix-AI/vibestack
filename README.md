@@ -6,7 +6,7 @@ The platform is designed for companies that want to encourage AI-assisted app cr
 
 ## Core Concept
 
-A non-technical creator builds a web app with an AI coding tool, then asks the tool to "push this to VibeStack." A companion deployment skill packages the project, sends it to the VibeStack API, and polls until deployment completes. VibeStack stores the source in an internal bare Git repository, builds a Docker image, runs the app on a single Docker host, routes traffic through Traefik, provisions a Cloudflare-backed subdomain, and protects the app with VibeStack-managed authentication.
+A non-technical creator builds a web app with an AI coding tool, then asks the tool to "push this to VibeStack." A companion deployment helper packages the project, sends it to the VibeStack API, and polls until deployment completes. VibeStack stores the source in an internal bare Git repository, builds a Docker image, runs the app on a single Docker host, routes traffic through Traefik, provisions a Cloudflare-backed subdomain, and protects the app with VibeStack-managed authentication.
 
 Creators never need to see Git, Docker, Traefik, CI/CD, image registries, or DNS.
 
@@ -49,17 +49,17 @@ Choose the path that matches what you are trying to do:
 - Operate, upgrade, back up, and restore VibeStack: [docs/operations.md](docs/operations.md)
 - Understand branches, versions, and release channels: [docs/release-process.md](docs/release-process.md)
 
-## Deployment Skill
+## Deployment Helper
 
-The initial Claude Code companion skill lives in:
+The reusable coding-agent deployment helper lives in:
 
 - [skills/deploy-to-vibestack/SKILL.md](skills/deploy-to-vibestack/SKILL.md)
 
 It describes how an AI coding agent should prepare a web app for VibeStack, create or validate `vibestack.json`, package the source as a tarball, submit it to the deployment API, and poll for status.
 
-When a deployment fails, the helper now fetches VibeStack Doctor output from the server. Doctor classifies common generated-app failures such as missing health routes, wrong bind hosts, port mismatches, missing environment secrets, hard-coded localhost Postgres connections, missing database tables or migrations, build failures, and container startup failures. The management UI shows the same diagnosis and includes a copyable fix prompt for Claude Code, Codex, or another coding agent.
+When a deployment fails, the helper now fetches VibeStack Doctor output from the server. Doctor classifies common generated-app failures such as missing health routes, wrong bind hosts, port mismatches, missing environment secrets, hard-coded localhost Postgres connections, missing database tables or migrations, build failures, and container startup failures. The management UI shows the same diagnosis and includes a copyable fix prompt for any coding agent.
 
-The skill also includes a reference API contract and a helper script:
+The helper bundle also includes a reference API contract and a deploy script:
 
 - [skills/deploy-to-vibestack/references/api.md](skills/deploy-to-vibestack/references/api.md)
 - [skills/deploy-to-vibestack/references/manifest.md](skills/deploy-to-vibestack/references/manifest.md)
@@ -75,7 +75,7 @@ App creators should not need to clone this repository, read deployment docs, or 
 - an API token created from VibeStack
 - the setup prompt in [docs/creator-onboarding.md](docs/creator-onboarding.md)
 
-After the deployment skill is installed once, the normal creator workflow is:
+After the deployment helper is configured once, the normal creator workflow is:
 
 ```text
 Deploy this app to VibeStack.
@@ -104,7 +104,7 @@ The Cloudflare token must be able to edit DNS records in the zone used by the ho
 
 ## Current Status
 
-This repository is an initial public release. It includes the VibeStack API, worker, web app, shared package, deployment skill, VibeStack Doctor troubleshooting workflow, and sample application fixtures. APIs and operational behavior may change before a 1.0 release.
+This repository is an initial public release. It includes the VibeStack API, worker, web app, shared package, deployment helper, VibeStack Doctor troubleshooting workflow, and sample application fixtures. APIs and operational behavior may change before a 1.0 release.
 
 ## Contributing
 

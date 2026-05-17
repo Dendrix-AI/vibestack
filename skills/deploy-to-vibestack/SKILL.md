@@ -1,6 +1,6 @@
 ---
 name: deploy-to-vibestack
-description: Package and deploy AI-generated web applications to a self-hosted VibeStack server. Use when a user asks to push, publish, deploy, update, or roll back a web app to VibeStack from Claude Code or another coding agent, especially when the user should not interact with Git, Docker, CI/CD, DNS, or hosting infrastructure directly. Also use when the user asks to update, refresh, or reinstall their VibeStack deployment skill.
+description: Package and deploy AI-generated web applications to a self-hosted VibeStack server. Use when a user asks to push, publish, deploy, update, or roll back a web app to VibeStack from any coding agent, especially when the user should not interact with Git, Docker, CI/CD, DNS, or hosting infrastructure directly. Also use when the user asks to update, refresh, or reinstall their VibeStack deployment helper or skill bundle.
 ---
 
 # Deploy To VibeStack

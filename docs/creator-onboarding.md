@@ -23,12 +23,12 @@ For each creator, provide:
 
 Do not send database IDs when a team slug is available.
 
-## One-Time Claude Code Setup Prompt
+## One-Time Coding Agent Setup Prompt
 
 Use the Onboarding page in the VibeStack admin UI to generate this prompt with the correct management URL, hosted app domain, team slug, access mode, and database default. If you need to do it manually, give the creator this prompt after filling in the values in brackets:
 
 ```text
-I want you to install the reusable VibeStack deployment skill in Claude Code.
+I want you to configure the reusable VibeStack deployment helper for this coding agent.
 
 Use these defaults:
 - VibeStack API URL: [https://vibestack.example.com]
@@ -37,32 +37,33 @@ Use these defaults:
 - Default access mode: VibeStack login access
 - Default database behavior: no Postgres unless I explicitly ask for persistent structured data
 
-Ask me for my VibeStack API token. Do not print the token back to me. Do not commit it. Do not store it in any app repository. If Claude Code has a secure local user-level secrets mechanism, use that; otherwise store it in a user-level config file with permissions set to 0600.
+Ask me for my VibeStack API token. Do not print the token back to me. Do not commit it. Do not store it in any app repository. If this coding agent has a secure local user-level secrets mechanism, use that; otherwise store it in a user-level config file with permissions set to 0600.
 
-Then install the VibeStack deployment skill:
+Then install or configure the VibeStack deployment helper:
 1. Fetch https://github.com/Dendrix-AI/vibestack.
-2. Copy `skills/deploy-to-vibestack` into the local Claude Code skills directory as `deploy-to-vibestack`.
-3. Verify the installed skill contains `SKILL.md`, `scripts/vibestack_deploy.py`, `references/api.md`, and `references/manifest.md`.
-4. Create `~/.config/vibestack/deploy.json` with the defaults above.
-5. Store credentials only in a user-level credentials file or secure local secrets store.
-6. Do not deploy the current app unless I explicitly ask you to.
+2. If this agent supports user-level skills or reusable instructions, install `skills/deploy-to-vibestack` there as `deploy-to-vibestack`.
+3. If this agent does not support skills, keep the helper files available locally and use `scripts/vibestack_deploy.py` directly when deploying.
+4. Verify the helper contains `SKILL.md`, `scripts/vibestack_deploy.py`, `references/api.md`, and `references/manifest.md`.
+5. Create `~/.config/vibestack/deploy.json` with the defaults above.
+6. Store credentials only in a user-level credentials file or secure local secrets store.
+7. Do not deploy the current app unless I explicitly ask you to.
 
-After setup, explain that I can deploy any future app by opening that app in Claude Code and saying: "Deploy this app to VibeStack."
+After setup, explain that I can deploy any future app by opening that app in this coding agent and saying: "Deploy this app to VibeStack."
 ```
 
 ## Normal Creator Workflow
 
 After the setup prompt has been run once:
 
-1. Open the app project in Claude Code.
-2. Ask Claude Code to build or modify the app.
+1. Open the app project in your coding agent.
+2. Ask the agent to build or modify the app.
 3. Say:
 
 ```text
 Deploy this app to VibeStack.
 ```
 
-Claude Code should prepare the app, create or update `vibestack.json`, package the source, upload it to VibeStack, poll deployment status, and report the live URL.
+The coding agent should prepare the app, create or update `vibestack.json`, package the source, upload it to VibeStack, poll deployment status, and report the live URL.
 
 ## When To Enable Postgres
 
