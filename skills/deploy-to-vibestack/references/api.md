@@ -74,7 +74,8 @@ Success:
       "slug": "sales-dashboard",
       "hostname": "finance-sales-dashboard.apps.example.com",
       "url": "https://finance-sales-dashboard.apps.example.com",
-      "status": "running"
+      "status": "running",
+      "editableFilesAvailable": true
     }
   ]
 }
@@ -88,6 +89,29 @@ Content-Type: multipart/form-data
 ```
 
 Use the same multipart format as create-and-deploy. The app ID is required for this endpoint.
+
+## Restore Editable App Files
+
+Use this when the user wants to continue editing an app on a different computer and the local files are not present.
+
+```http
+GET /api/v1/apps/{appId}/source
+Accept: application/gzip
+```
+
+Success returns a gzipped tarball containing the current editable app files captured by VibeStack. The archive excludes local-only and sensitive files such as `.env`, dependency folders, build output, caches, and `.git`.
+
+If editable files are unavailable, the API returns:
+
+```json
+{
+  "error": {
+    "code": "SOURCE_SNAPSHOT_NOT_AVAILABLE",
+    "message": "Editable app files are not available for this app yet.",
+    "agentHint": "This app needs at least one successful deployment created after source capture was enabled before editable files can be restored on another computer."
+  }
+}
+```
 
 ## Poll Deployment
 

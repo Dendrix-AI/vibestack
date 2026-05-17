@@ -44,6 +44,7 @@ import { publicCloudflareSetting } from './cloudflare.js';
 import { getSelfUpdateStatus, startSelfUpdate } from './updater.js';
 import { schemaCompatibilityForRef } from './schema-compatibility.js';
 import { createSystemBackup, restoreSystemBackup } from './system-backup.js';
+import { createSourceArchive, sourceSnapshotExists } from './deployment/git.js';
 import {
   buildDoctorPacket,
   enrichDoctorWithOpenRouter,
@@ -170,6 +171,7 @@ async function ensureDeploymentsAllowed(db: Db, actor: Actor, teamId: string): P
 }
 
 function appResponse(row: AppRow & { external_password_hash?: string | null }): Record<string, unknown> {
+  const sourceAvailable = Boolean((row as AppRow & { source_available?: boolean | null }).source_available ?? row.current_deployment_id);
   return {
     id: row.id,
     teamId: row.team_id,
@@ -185,6 +187,8 @@ function appResponse(row: AppRow & { external_password_hash?: string | null }): 
     externalPasswordEnabled: row.external_password_enabled,
     externalPasswordConfigured: Boolean(row.external_password_hash),
     loginAccessEnabled: row.login_access_enabled,
+    editableFilesAvailable: sourceAvailable,
+    sourceAvailable,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -388,6 +392,22 @@ async function addAppEvent(
       input.metadata ? JSON.stringify(input.metadata) : null
     ]
   );
+}
+
+async function currentSourceCommit(db: Db, appId: string): Promise<string | null> {
+  const row = await db.maybeOne<{
+    source_commit_sha: string | null;
+    rollback_source_commit_sha: string | null;
+  }>(
+    `SELECT current_deployment.source_commit_sha,
+            rollback_source.source_commit_sha AS rollback_source_commit_sha
+     FROM apps
+     LEFT JOIN deployments current_deployment ON current_deployment.id = apps.current_deployment_id
+     LEFT JOIN deployments rollback_source ON rollback_source.id = current_deployment.rollback_source_deployment_id
+     WHERE apps.id = $1 AND apps.deleted_at IS NULL`,
+    [appId]
+  );
+  return row?.source_commit_sha ?? row?.rollback_source_commit_sha ?? null;
 }
 
 const LoginBody = z.object({ email: z.string().email(), password: z.string().min(1) });
@@ -1245,6 +1265,51 @@ async function registerRoutes(app: FastifyInstance, ctx: AppContext): Promise<vo
     const { id } = parseParams(IdParam, request);
     const appRow = await getAuthorizedApp(db, actor, id, 'viewer');
     return { app: appResponse(appRow) };
+  });
+
+  app.get('/api/v1/apps/:id/source', async (request, reply) => {
+    const actor = await requireActor(db, request);
+    const { id } = parseParams(IdParam, request);
+    const appRow = await getAuthorizedApp(db, actor, id, 'creator');
+    const commitSha = await currentSourceCommit(db, id);
+
+    if (!commitSha || !(await sourceSnapshotExists(config, id, commitSha))) {
+      throw new HttpError({
+        code: 'SOURCE_SNAPSHOT_NOT_AVAILABLE',
+        message: 'Editable app files are not available for this app yet.',
+        statusCode: 404,
+        agentHint:
+          'This app needs at least one successful deployment created after source capture was enabled before editable files can be restored on another computer.'
+      });
+    }
+
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vibestack-source-'));
+    const filename = `${appRow.slug}-editable-files.tar.gz`;
+    const archivePath = path.join(tmpDir, filename);
+
+    try {
+      await createSourceArchive(config, id, commitSha, archivePath);
+      const cleanup = () => {
+        void fs.rm(tmpDir, { recursive: true, force: true });
+      };
+      reply.raw.once('finish', cleanup);
+      reply.raw.once('close', cleanup);
+      await writeAuditLog(db, {
+        actor,
+        action: 'app.source_downloaded',
+        targetType: 'app',
+        targetId: id,
+        sourceIp: clientIp(request),
+        metadata: { deploymentId: appRow.current_deployment_id, sourceCommitSha: commitSha }
+      });
+      return reply
+        .header('Content-Type', 'application/gzip')
+        .header('Content-Disposition', `attachment; filename="${filename}"`)
+        .send(createReadStream(archivePath));
+    } catch (error) {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+      throw error;
+    }
   });
 
   app.patch('/api/v1/apps/:id', async (request) => {

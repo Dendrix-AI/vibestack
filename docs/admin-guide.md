@@ -62,6 +62,14 @@ For internal apps, default to VibeStack login access unless a specific app needs
 
 Use external-password access for demos, contractors, or temporary sharing where full VibeStack user accounts are not appropriate. If a generated external app password is created during deployment, it is shown once.
 
+## Editable App Files
+
+VibeStack keeps a sanitized copy of each successful deployment's editable app files so a creator can continue working from another computer. The coding agent can restore those files from the server when the local project folder is missing.
+
+The saved editable files exclude local-only and sensitive paths such as `.env`, `.env.*`, `.git`, dependency folders, build output, caches, and virtual environments. App secrets remain in VibeStack's secrets store and are not included in the editable-file download.
+
+Deleting an app from the management UI removes the running containers, app runtime data, deployment uploads/build folders, and saved editable files for that app.
+
 ## Cloudflare
 
 The current Community Edition installer expects Cloudflare DNS. The Cloudflare token must be able to edit DNS records in the relevant zone.

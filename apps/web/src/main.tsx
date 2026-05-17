@@ -96,6 +96,17 @@ function appUrl(app: AppSummary): string {
   return host.startsWith('http') ? host : `https://${host}`;
 }
 
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 function updatedAt(app: AppSummary): string | undefined {
   return app.updatedAt ?? app.updated_at ?? app.createdAt ?? app.created_at;
 }
@@ -413,6 +424,7 @@ function App() {
             onSelect={setSelectedAppId}
             onAppUpdated={replaceApp}
             onRefreshDetail={() => selectedApp ? void refreshDetail(selectedApp.id) : undefined}
+            onDownloadSource={handleDownloadAppSource}
             onAction={handleAppAction}
             onSecret={handleSecret}
             onRollback={handleRollback}
@@ -561,14 +573,17 @@ function App() {
 
   async function handleDownloadBackup() {
     const { blob, filename } = await api.downloadSystemBackup();
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
+    downloadBlob(blob, filename);
+  }
+
+  async function handleDownloadAppSource(app: AppSummary): Promise<void> {
+    setDetailError(undefined);
+    try {
+      const { blob, filename } = await api.downloadAppSource(app.id);
+      downloadBlob(blob, filename);
+    } catch (caught) {
+      setDetailError(formatApiError(caught));
+    }
   }
 
   async function handleRestoreBackup(file: File): Promise<string> {
@@ -671,6 +686,7 @@ function AppsView(props: {
   onSelect: (id: string) => void;
   onAppUpdated: (app: AppSummary) => void;
   onRefreshDetail: () => void;
+  onDownloadSource: (app: AppSummary) => Promise<void>;
   onAction: (action: 'start' | 'stop' | 'delete' | 'postgres-create' | 'postgres-delete' | 'share', app: AppSummary, payload?: Partial<AppSummary>) => void;
   onSecret: (app: AppSummary, key: string, value?: string) => void;
   onRollback: (app: AppSummary, deploymentId: string) => void;
@@ -730,10 +746,12 @@ function AppDetail(props: Parameters<typeof AppsView>[0] & { app: AppSummary }) 
   });
   const [showExternalPassword, setShowExternalPassword] = useState(false);
   const [rollbackTarget, setRollbackTarget] = useState('');
+  const [sourceBusy, setSourceBusy] = useState(false);
   const loginEnabled = props.app.loginAccessEnabled ?? props.app.login_access_enabled ?? true;
   const externalEnabled = props.app.externalPasswordEnabled ?? props.app.external_password_enabled ?? false;
   const postgresEnabled = props.app.postgresEnabled ?? props.app.postgres_enabled ?? false;
   const externalConfigured = props.app.externalPasswordConfigured ?? props.app.external_password_configured ?? externalEnabled;
+  const sourceAvailable = props.app.editableFilesAvailable ?? props.app.editable_files_available ?? props.app.sourceAvailable ?? props.app.source_available ?? Boolean(props.app.currentDeploymentId ?? props.app.current_deployment_id);
   const url = appUrl(props.app);
   const rollbackOptions = props.detail.deployments.filter((deployment) => deployment.status === 'succeeded');
   const lifecycleBusy = ['deploying', 'starting', 'stopping', 'updating', 'deleting'].includes(props.app.status);
@@ -778,6 +796,15 @@ function AppDetail(props: Parameters<typeof AppsView>[0] & { app: AppSummary }) 
     }
   }
 
+  async function downloadSource() {
+    setSourceBusy(true);
+    try {
+      await props.onDownloadSource(props.app);
+    } finally {
+      setSourceBusy(false);
+    }
+  }
+
   return (
     <div className="detail-stack">
       <ErrorBanner message={props.detailError} />
@@ -800,7 +827,10 @@ function AppDetail(props: Parameters<typeof AppsView>[0] & { app: AppSummary }) 
         <button className="button secondary" onClick={() => confirmAction(`Stop ${props.app.name}?`, () => props.onAction('stop', props.app))} disabled={lifecycleBusy || props.app.status === 'stopped'}>
           {stopping ? <Loader2 className="spin" size={16} /> : <Square size={16} />} {stopping ? 'Stopping' : 'Stop'}
         </button>
-        <button className="button secondary danger" onClick={() => confirmAction(`Delete ${props.app.name}? This hides it from the management UI.`, () => props.onAction('delete', props.app))} disabled={lifecycleBusy}>
+        <button className="button secondary" onClick={() => void downloadSource()} disabled={!sourceAvailable || sourceBusy} title={sourceAvailable ? 'Download editable app files' : 'Editable files are not available yet'}>
+          {sourceBusy ? <Loader2 className="spin" size={16} /> : <Download size={16} />} Editable files
+        </button>
+        <button className="button secondary danger" onClick={() => confirmAction(`Delete ${props.app.name}? This removes the app, runtime data, and saved editable files from this server.`, () => props.onAction('delete', props.app))} disabled={lifecycleBusy}>
           <Trash2 size={16} /> Delete
         </button>
         <button className="button secondary" onClick={props.onRefreshDetail}>

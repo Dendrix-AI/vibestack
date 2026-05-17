@@ -175,6 +175,21 @@ export const api = {
     return request<void>(`/apps/${appId}`, { method: 'DELETE' });
   },
 
+  async downloadAppSource(appId: string): Promise<{ blob: Blob; filename: string }> {
+    const response = await fetch(`${API_BASE}/apps/${appId}/source`, { credentials: 'include' });
+    if (!response.ok) {
+      const parsed = await parseResponse(response);
+      if (isRecord(parsed) && isRecord(parsed.error)) {
+        throw new ApiError(response.status, parsed as ApiErrorBody);
+      }
+      throw new Error(`Download failed with status ${response.status}`);
+    }
+    return {
+      blob: await response.blob(),
+      filename: contentDispositionFilename(response.headers.get('Content-Disposition')) ?? 'vibestack-editable-files.tar.gz'
+    };
+  },
+
   startApp(appId: string): Promise<AppSummary> {
     return request<unknown>(`/apps/${appId}/start`, { method: 'POST' }).then((value) =>
       unwrap<AppSummary>(value, 'app')

@@ -116,6 +116,28 @@ describe('deployment source validation', () => {
     await expect(fs.access(path.join(extractDir, '.venv'))).rejects.toThrow();
   });
 
+  it('strips local environment files before validating the source', async () => {
+    const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'vibestack-validation-'));
+    const tarball = path.join(temp, 'source.tar.gz');
+    const extractDir = path.join(temp, 'extract');
+    const source = path.join(temp, 'source');
+    await fs.mkdir(source);
+    await fs.writeFile(path.join(source, 'Dockerfile'), 'FROM node:20-alpine\nEXPOSE 3000\n');
+    await fs.writeFile(
+      path.join(source, 'vibestack.json'),
+      JSON.stringify({ name: 'node-basic', port: 3000, healthCheckPath: '/', persistent: false })
+    );
+    await fs.writeFile(path.join(source, '.env'), 'TOKEN=do-not-store');
+    await fs.writeFile(path.join(source, '.env.local'), 'TOKEN=do-not-store');
+    await c({ gzip: true, file: tarball, cwd: source }, ['.']);
+
+    const result = await extractAndValidate(tarball, extractDir);
+
+    expect(result).toMatchObject({ ok: true });
+    await expect(fs.access(path.join(extractDir, '.env'))).rejects.toThrow();
+    await expect(fs.access(path.join(extractDir, '.env.local'))).rejects.toThrow();
+  });
+
   it('returns INVALID_SOURCE_ARCHIVE for unsupported entries outside ignored directories', async () => {
     const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'vibestack-validation-'));
     const tarball = path.join(temp, 'source.tar.gz');

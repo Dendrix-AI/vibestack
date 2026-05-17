@@ -1,9 +1,11 @@
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 import importlib.util
 from contextlib import redirect_stdout
+from io import BytesIO
 from io import StringIO
 from pathlib import Path
 
@@ -290,6 +292,48 @@ class DeployHelperDryRunTest(unittest.TestCase):
 
         self.assertEqual(calls, ["https://vibestack.local.test/api/v1/apps/app-1/doctor?tail=300"])
         self.assertIn('"summary": "health route is missing"', output.getvalue())
+
+    def test_restore_source_downloads_editable_files_to_target(self) -> None:
+        module = load_helper_module()
+        calls: list[str] = []
+        archive = BytesIO()
+        with tarfile.open(fileobj=archive, mode="w:gz") as tar:
+            data = b'{"name":"restored-app","port":3000,"healthCheckPath":"/","persistent":true}'
+            info = tarfile.TarInfo("vibestack.json")
+            info.size = len(data)
+            tar.addfile(info, BytesIO(data))
+
+        def fake_http_bytes(method, url, token, insecure_tls=False):
+            calls.append(url)
+            return archive.getvalue(), {"content-type": "application/gzip"}
+
+        module.http_bytes = fake_http_bytes
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "restored-app"
+            args = module.build_parser().parse_args(
+                [
+                    "--restore-source",
+                    "--skip-skill-update-check",
+                    "--api-url",
+                    "https://vibestack.local.test",
+                    "--token",
+                    "test-token",
+                    "--app-id",
+                    "app-1",
+                    "--target",
+                    str(target),
+                ]
+            )
+
+            output = StringIO()
+            with redirect_stdout(output):
+                module.restore_source(args)
+
+            self.assertTrue((target / "vibestack.json").exists())
+
+        self.assertEqual(calls, ["https://vibestack.local.test/api/v1/apps/app-1/source"])
+        self.assertIn("Editable app files restored", output.getvalue())
 
     def test_print_doctor_guidance_prefers_ai_enhancement(self) -> None:
         module = load_helper_module()

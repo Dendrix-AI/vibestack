@@ -92,6 +92,10 @@ export type AppSummary = {
   external_password_configured?: boolean;
   loginAccessEnabled?: boolean;
   login_access_enabled?: boolean;
+  editableFilesAvailable?: boolean;
+  editable_files_available?: boolean;
+  sourceAvailable?: boolean;
+  source_available?: boolean;
   createdAt?: string;
   created_at?: string;
   updatedAt?: string;

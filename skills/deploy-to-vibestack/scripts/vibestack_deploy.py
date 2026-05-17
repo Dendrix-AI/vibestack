@@ -27,7 +27,7 @@ from typing import Any
 from urllib import error, request
 
 
-SKILL_BUNDLE_VERSION = "2026-05-14.1"
+SKILL_BUNDLE_VERSION = "2026-05-17.1"
 SKILL_LATEST_SCRIPT_URL = (
     "https://raw.githubusercontent.com/Dendrix-AI/vibestack/main/"
     "skills/deploy-to-vibestack/scripts/vibestack_deploy.py"
@@ -435,6 +435,20 @@ def make_tarball(source: Path) -> Path:
     return tar_path
 
 
+def safe_extract_tarball(archive_path: Path, target: Path) -> None:
+    root = target.resolve()
+    with tarfile.open(archive_path, "r:gz") as tar:
+        members = []
+        for member in tar.getmembers():
+            destination = (target / member.name).resolve()
+            if destination != root and root not in destination.parents:
+                raise SystemExit(f"UNSAFE_SOURCE_ARCHIVE: archive entry escapes target folder: {member.name}")
+            if member.issym() or member.islnk():
+                raise SystemExit(f"UNSAFE_SOURCE_ARCHIVE: archive entry uses a link: {member.name}")
+            members.append(member)
+        tar.extractall(target, members=members)
+
+
 def encode_multipart(fields: dict[str, str], files: dict[str, Path]) -> tuple[bytes, str]:
     boundary = f"----vibestack-{uuid.uuid4().hex}"
     chunks: list[bytes] = []
@@ -488,6 +502,35 @@ def http_json(
         with request.urlopen(req, context=context, timeout=60) as response:
             data = response.read()
             return json.loads(data.decode("utf-8")) if data else {}
+    except error.HTTPError as exc:
+        data = exc.read().decode("utf-8", errors="replace")
+        try:
+            payload = json.loads(data)
+        except json.JSONDecodeError:
+            payload = {"error": {"code": f"HTTP_{exc.code}", "message": data}}
+        raise RuntimeError(json.dumps(payload, indent=2)) from exc
+
+
+def http_bytes(
+    method: str,
+    url: str,
+    token: str,
+    insecure_tls: bool = False,
+) -> tuple[bytes, dict[str, str]]:
+    req = request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/gzip, application/octet-stream",
+        },
+        method=method,
+    )
+    context = ssl._create_unverified_context() if insecure_tls else None
+
+    try:
+        with request.urlopen(req, context=context, timeout=120) as response:
+            headers = {key.lower(): value for key, value in response.headers.items()}
+            return response.read(), headers
     except error.HTTPError as exc:
         data = exc.read().decode("utf-8", errors="replace")
         try:
@@ -595,6 +638,52 @@ def doctor(args: argparse.Namespace) -> None:
     print(json.dumps(payload, indent=2))
 
 
+def restore_source(args: argparse.Namespace) -> None:
+    check_skill_update(args)
+    defaults = load_defaults(args.config, args.credentials)
+    args.endpoint = args.endpoint or defaults.get("endpoint")
+    args.team = args.team or defaults.get("team")
+    args.app_id = args.app_id or defaults.get("app_id")
+    args.token = args.token or defaults.get("token")
+
+    args.endpoint = require_deploy_value(args.endpoint, "VibeStack API URL", "--api-url")
+    args.token = require_deploy_value(args.token, "VibeStack API token", "--token")
+    endpoint = args.endpoint.rstrip("/")
+
+    app_name = args.app
+    if not args.app_id:
+        if not app_name:
+            raise SystemExit("APP_REQUIRED: pass --app-id or --app when restoring editable files.")
+        args.app_id = resolve_existing_app_id(endpoint, args.token, app_name, args.team, args.insecure_tls)
+
+    target = Path(args.target or app_name or str(args.app_id)).expanduser().resolve()
+    if target.exists() and not target.is_dir():
+        raise SystemExit(f"TARGET_NOT_DIRECTORY: {target} exists but is not a folder.")
+    if target.exists() and any(target.iterdir()) and not args.overwrite:
+        raise SystemExit(
+            f"TARGET_NOT_EMPTY: {target} already has files. Pass --target with an empty folder or use --overwrite."
+        )
+
+    archive_bytes, _headers = http_bytes(
+        "GET",
+        f"{endpoint}/api/v1/apps/{args.app_id}/source",
+        args.token,
+        insecure_tls=args.insecure_tls,
+    )
+
+    target.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(prefix="vibestack-source-", suffix=".tar.gz", delete=False) as tmp:
+        tmp.write(archive_bytes)
+        archive_path = Path(tmp.name)
+
+    try:
+        safe_extract_tarball(archive_path, target)
+    finally:
+        archive_path.unlink(missing_ok=True)
+
+    print(f"Editable app files restored to {target}")
+
+
 def fetch_doctor(endpoint: str, token: str, app_id: str, insecure_tls: bool, tail: int = 300) -> dict[str, Any] | None:
     try:
         payload = http_json(
@@ -628,8 +717,10 @@ def print_doctor_guidance(doctor: dict[str, Any]) -> None:
 
 
 def deploy(args: argparse.Namespace) -> None:
+    if args.restore_source:
+        restore_source(args)
+        return
     check_skill_update(args)
-
     if args.diagnostics:
         diagnostics(args)
         return
@@ -786,6 +877,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--app-id", help="existing app ID for update deployments")
     parser.add_argument("--update", action="store_true", help="resolve app name to an existing app and deploy an update")
     parser.add_argument("--source", default=".", help="project root")
+    parser.add_argument("--target", help="folder to restore editable app files into")
+    parser.add_argument("--overwrite", action="store_true", help="allow restoring editable files into a non-empty folder")
     parser.add_argument("--login-access", type=parse_bool)
     parser.add_argument("--external-password", type=parse_bool)
     parser.add_argument("--external-password-value")
@@ -803,6 +896,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--smoke-timeout", type=int, default=90, help="seconds to wait for local smoke health")
     parser.add_argument("--diagnostics", action="store_true", help="fetch app diagnostics instead of deploying")
     parser.add_argument("--doctor", action="store_true", help="fetch VibeStack Doctor output instead of deploying")
+    parser.add_argument("--restore-source", action="store_true", help="restore editable app files from VibeStack instead of deploying")
     parser.add_argument("--diagnostics-tail", type=int, default=300, help="number of app and Postgres log lines to scan")
     parser.add_argument(
         "--skip-skill-update-check",
