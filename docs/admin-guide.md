@@ -44,7 +44,7 @@ Use platform admin access sparingly. Most people should be creators or viewers.
 
 ## API Tokens
 
-Creators need a personal API token for the deployment skill.
+Creators need a personal API token for the deployment helper.
 
 Recommended policy:
 
@@ -94,9 +94,9 @@ For each creator, provide:
 - API token.
 - The setup prompt from [creator-onboarding.md](creator-onboarding.md).
 
-The VibeStack UI includes an Onboarding page that generates the Claude Code setup prompt from your current base domain and team list. Use that page when possible so admins do not have to assemble the prompt by hand.
+The VibeStack UI includes an Onboarding page that generates a coding-agent setup prompt from your current base domain and team list. Use that page when possible so admins do not have to assemble the prompt by hand.
 
-After setup, tell creators to open any app project in Claude Code and say:
+After setup, tell creators to open any app project in their coding agent and say:
 
 ```text
 Deploy this app to VibeStack.

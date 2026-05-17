@@ -1445,7 +1445,7 @@ function OnboardingView({ teams, settings }: { teams: Team[]; settings: Platform
       ? 'private access'
       : 'VibeStack login access';
 
-  const prompt = useMemo(() => `I want you to install the reusable VibeStack deployment skill in Claude Code.
+  const prompt = useMemo(() => `I want you to configure the reusable VibeStack deployment helper for this coding agent.
 
 Use these defaults:
 - VibeStack API URL: ${apiUrl || 'https://vibestack.example.com'}
@@ -1454,17 +1454,18 @@ Use these defaults:
 - Default access mode: ${accessText}
 - Default database behavior: ${postgresDefault ? 'enable VibeStack-managed Postgres for new apps' : 'no Postgres unless I explicitly ask for persistent structured data'}
 
-Ask me for my VibeStack API token. Do not print the token back to me. Do not commit it. Do not store it in any app repository. If Claude Code has a secure local user-level secrets mechanism, use that; otherwise store it in a user-level config file with permissions set to 0600.
+Ask me for my VibeStack API token. Do not print the token back to me. Do not commit it. Do not store it in any app repository. If this coding agent has a secure local user-level secrets mechanism, use that; otherwise store it in a user-level config file with permissions set to 0600.
 
-Then install the VibeStack deployment skill:
+Then install or configure the VibeStack deployment helper:
 1. Fetch https://github.com/Dendrix-AI/vibestack.
-2. Copy skills/deploy-to-vibestack into the local Claude Code skills directory as deploy-to-vibestack.
-3. Verify the installed skill contains SKILL.md, scripts/vibestack_deploy.py, references/api.md, and references/manifest.md.
-4. Create ~/.config/vibestack/deploy.json with the defaults above.
-5. Store credentials only in a user-level credentials file or secure local secrets store.
-6. Do not deploy the current app unless I explicitly ask you to.
+2. If this agent supports user-level skills or reusable instructions, install skills/deploy-to-vibestack there as deploy-to-vibestack.
+3. If this agent does not support skills, keep the helper files available locally and use scripts/vibestack_deploy.py directly when deploying.
+4. Verify the helper contains SKILL.md, scripts/vibestack_deploy.py, references/api.md, and references/manifest.md.
+5. Create ~/.config/vibestack/deploy.json with the defaults above.
+6. Store credentials only in a user-level credentials file or secure local secrets store.
+7. Do not deploy the current app unless I explicitly ask you to.
 
-After setup, explain that I can deploy any future app by opening that app in Claude Code and saying: "Deploy this app to VibeStack."`, [accessText, apiUrl, appDomain, postgresDefault, teamSlug]);
+After setup, explain that I can deploy any future app by opening that app in this coding agent and saying: "Deploy this app to VibeStack."`, [accessText, apiUrl, appDomain, postgresDefault, teamSlug]);
 
   async function copyPrompt() {
     await navigator.clipboard.writeText(prompt);
@@ -1496,7 +1497,7 @@ After setup, explain that I can deploy any future app by opening that app in Cla
       </div>
 
       <div className="panel admin-main">
-        <PanelTitle icon={TerminalSquare} title="Claude Code setup prompt" />
+        <PanelTitle icon={TerminalSquare} title="Coding agent setup prompt" />
         <textarea className="prompt-preview" value={prompt} readOnly />
       </div>
     </section>

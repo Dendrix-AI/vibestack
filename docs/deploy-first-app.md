@@ -68,9 +68,9 @@ In the VibeStack management UI:
 3. Open the app URL.
 4. Check the deployment history and logs.
 
-## Deploy From Claude Code
+## Deploy From A Coding Agent
 
-After a creator has installed the deployment skill, they should be able to open an app project and say:
+After a creator has configured the deployment helper, they should be able to open an app project and say:
 
 ```text
 Deploy this app to VibeStack.
