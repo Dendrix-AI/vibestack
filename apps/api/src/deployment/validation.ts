@@ -21,6 +21,8 @@ const IGNORED_SOURCE_DIRS = new Set([
   '.ruff_cache'
 ]);
 
+const IGNORED_SOURCE_FILES = new Set(['.DS_Store', '.env']);
+
 export type ValidationResult =
   | { ok: true; manifest: VibeStackManifest }
   | { ok: false; code: string; message: string; details?: Record<string, unknown> };
@@ -43,6 +45,9 @@ export async function extractAndValidate(tarballPath: string, destination: strin
           return false;
         }
         if (parts.some((part) => IGNORED_SOURCE_DIRS.has(part))) {
+          return false;
+        }
+        if (IGNORED_SOURCE_FILES.has(parts[parts.length - 1] ?? '') || parts.some((part) => part.startsWith('.env.'))) {
           return false;
         }
         if (entry.type === 'SymbolicLink' || entry.type === 'Link' || entry.type === 'CharacterDevice' || entry.type === 'BlockDevice') {

@@ -8,6 +8,8 @@ the workspace packages for each release.
 
 ### Added
 
+- Added recoverable editable app files for successful deployments, including API, UI, and
+  deployment-helper support for continuing work from another computer.
 - Added VibeStack Doctor, including API and web UI support for collecting app state,
   deployment events, runtime logs, health-check results, and generated troubleshooting
   guidance.

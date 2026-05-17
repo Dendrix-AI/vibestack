@@ -65,6 +65,18 @@ Deploy this app to VibeStack.
 
 The coding agent should prepare the app, create or update `vibestack.json`, package the source, upload it to VibeStack, poll deployment status, and report the live URL.
 
+## Continuing On Another Computer
+
+If a creator opens the coding agent on another computer and asks about or changes an app that was already deployed to VibeStack, the agent should bring the editable app files onto that computer first.
+
+Creators can say:
+
+```text
+Continue editing my todo-notes app from VibeStack.
+```
+
+The agent should handle the download and setup behind the scenes. Creators should not need to understand repositories, branches, or source-control commands.
+
 ## When To Enable Postgres
 
 Creators should use VibeStack-managed Postgres when the app stores:

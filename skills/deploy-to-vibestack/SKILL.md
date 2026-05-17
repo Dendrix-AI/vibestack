@@ -11,6 +11,8 @@ Use this skill to deploy a Docker-compatible web application to VibeStack throug
 
 Creators should not be exposed to Git, Docker, Traefik, Cloudflare, or build-system details unless a deployment error requires a code fix.
 
+If the creator asks about, fixes, changes, or continues an app that exists on VibeStack but is not present on the current computer, restore the editable app files from VibeStack first. Describe this to the user as "bringing the editable app files onto this computer"; do not use terms like repo, clone, branch, or git.
+
 ## Updating This Skill
 
 The helper checks whether the installed skill bundle is current before every helper command. If it can confirm a newer bundle exists, it stops before deployment and tells the agent to update the installed user-level skill. If GitHub cannot be reached, the check is non-blocking and the helper continues.
@@ -139,6 +141,28 @@ Read `references/manifest.md` for the manifest contract.
 13. Report the live URL on success.
 14. If the helper generated an external app password, relay it to the user exactly once and explain that VibeStack stores only a hash.
 15. On failure, use the returned `agentHint`, error code, details, and VibeStack Doctor output to fix the project and retry when appropriate.
+
+## Restoring Editable Files
+
+When the local project folder is missing, use the helper to restore the current editable files from the VibeStack server:
+
+```bash
+python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
+  --restore-source \
+  --app todo-notes \
+  --target ./todo-notes
+```
+
+If the app ID is known:
+
+```bash
+python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
+  --restore-source \
+  --app-id de52380f-282b-44de-a741-17118f331b01 \
+  --target ./todo-notes
+```
+
+Restore into an empty folder unless you have inspected the target and intentionally want to replace or merge files. If the helper reports `SOURCE_SNAPSHOT_NOT_AVAILABLE`, tell the user the app does not yet have recoverable editable files on the server and use diagnostics, logs, and the live app to help as far as possible.
 
 ## Runtime Diagnostics
 

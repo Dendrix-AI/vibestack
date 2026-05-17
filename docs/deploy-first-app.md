@@ -66,7 +66,21 @@ In the VibeStack management UI:
 1. Open Apps.
 2. Confirm the sample app is listed as running.
 3. Open the app URL.
-4. Check the deployment history and logs.
+4. Use the Editable files action to download the saved editable files.
+5. Check the deployment history and logs.
+
+## Restore Editable Files
+
+To verify the coding-agent recovery path, restore the sample app into a fresh local folder:
+
+```bash
+python3 skills/deploy-to-vibestack/scripts/vibestack_deploy.py \
+  --restore-source \
+  --app node-basic \
+  --target /tmp/vibestack-node-basic-restored
+```
+
+The restored folder should contain the deployable app files, but not local-only files such as `.env`, dependency folders, build output, or caches.
 
 ## Deploy From A Coding Agent
 
